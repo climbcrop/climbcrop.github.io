@@ -186,7 +186,11 @@ export class Tracker {
 
     if (raw.length < 2) return { samples: null, rate: 0 };
 
-    // ── Subject tracking over the collected frames (predict + adaptive re-acquire) ──
+    // ── Subject tracking over the collected frames ──
+    // The main subject is committed on the FIRST frame (seed if the user tapped one,
+    // else the largest person) and never re-decided. Prediction + a modest re-acquire
+    // window keep the lock on that same climber; longer misses are interpolated rather
+    // than grabbed from another person.
     const samples = [];
     let prev = null, prevT = null, vx = 0, vy = 0;
     const MAX_V = 1.5;
@@ -196,7 +200,7 @@ export class Tracker {
       if (prev) {
         const dt = t - prevT;
         anchor = { cx: prev.cx + vx * dt, cy: prev.cy + vy * dt };
-        maxJump = Math.min(0.6, 0.16 + 0.28 * dt);   // widen as time since last hit grows
+        maxJump = Math.min(0.34, 0.16 + 0.22 * dt);  // stay on the first-frame subject
       } else if (seed) {
         anchor = seed;
       }

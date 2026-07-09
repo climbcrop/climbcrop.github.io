@@ -247,6 +247,31 @@ function updateTimelineUI() {
   updatePlayhead();
 }
 
+// Keep the climb marker and every speed section inside the trimmed range.
+function clampInnerKeyframes() {
+  state.climbStart = clamp(state.climbStart, state.trimStart, state.trimEnd);
+  for (const g of state.segments) {
+    g.start = clamp(g.start, state.trimStart, state.trimEnd);
+    g.end = clamp(g.end, state.trimStart, state.trimEnd);
+  }
+}
+
+// Lightweight live scrub: move the preview to a time without fighting the seeked handler.
+let scrubReq = null;
+function scrubTo(tSec) {
+  if (state.playing) pause();
+  scrubReq = clamp(tSec, 0, Math.max(0, state.dur - 0.03));
+  if (video.seeking) return;             // coalesce — the seeked handler will pull the latest
+  video.currentTime = scrubReq;
+}
+video.addEventListener('seeked', () => {
+  if (scrubReq != null && Math.abs(video.currentTime - scrubReq) > 0.02) {
+    const next = scrubReq; scrubReq = null; video.currentTime = next; return;
+  }
+  scrubReq = null;
+  if (!state.playing) drawPreview();
+});
+
 let dragRole = null;
 tl.addEventListener('pointerdown', e => {
   const h = e.target.closest('.tl-handle,.tl-marker');
@@ -255,26 +280,35 @@ tl.addEventListener('pointerdown', e => {
   onTimelineMove(e);
 });
 tl.addEventListener('pointermove', e => { if (dragRole) onTimelineMove(e); });
-tl.addEventListener('pointerup', () => { dragRole = null; });
+tl.addEventListener('pointerup', () => {
+  if (dragRole === 'start' || dragRole === 'end') {
+    // drop any section squeezed to nothing by the new trim bounds
+    state.segments = state.segments.filter(g => g.end - g.start > 0.05);
+    renderSegments();
+    updateTimelineUI();
+  }
+  dragRole = null;
+});
 
 function onTimelineMove(e) {
   const r = tl.getBoundingClientRect();
   const tSec = clamp((e.clientX - r.left) / r.width, 0, 1) * state.dur;
   if (dragRole === 'start') {
     state.trimStart = clamp(tSec, 0, state.trimEnd - 0.5);
-    state.climbStart = clamp(state.climbStart, state.trimStart, state.trimEnd);
+    clampInnerKeyframes();
+    scrubTo(state.trimStart);            // show the new start frame live
   } else if (dragRole === 'end') {
     state.trimEnd = clamp(tSec, state.trimStart + 0.5, state.dur);
-    state.climbStart = clamp(state.climbStart, state.trimStart, state.trimEnd);
+    clampInnerKeyframes();
+    scrubTo(state.trimEnd);              // show the new end frame live
   } else if (dragRole === 'climb') {
     state.climbStart = clamp(tSec, state.trimStart, state.trimEnd);
+    scrubTo(state.climbStart);
   } else {
-    if (state.playing) pause();
-    video.currentTime = clamp(tSec, 0, state.dur);
+    scrubTo(clamp(tSec, state.trimStart, state.trimEnd));
   }
   updateTimelineUI();
 }
-video.addEventListener('seeked', () => { if (!state.playing) drawPreview(); });
 
 async function buildThumbnails() {
   const thumbVid = document.createElement('video');
@@ -408,8 +442,7 @@ $('#analyzeBtn').addEventListener('click', async () => {
     state.sampleFps = fps;
     state.analyzed = true;
     rebuildPath();
-    const p = Math.round(rate * 100);
-    $('#trackInfo').textContent = t(p < 50 ? 'analyzeLow' : 'analyzeDone', { p });
+    $('#trackInfo').textContent = t(rate < 0.5 ? 'analyzeLow' : 'analyzeDone');
     $('#exportBtn').disabled = false;
     setView('crop');
     video.currentTime = state.trimStart;
@@ -526,9 +559,14 @@ $('#setClimbBtn').addEventListener('click', () => {
   drawPreview();
 });
 
-// seed click (full view only)
+// Pick the main climber — always on the FIRST frame so the lock matches where analysis starts.
 cv.addEventListener('click', e => {
   if (state.view === 'crop' && state.analyzed) return;
+  if (Math.abs(video.currentTime - state.trimStart) > 0.15) {
+    scrubTo(state.trimStart);            // jump to the first frame, then tap the climber
+    toast(t('pickOnFirst'));
+    return;
+  }
   const r = cv.getBoundingClientRect();
   state.seed = { cx: (e.clientX - r.left) / r.width, cy: (e.clientY - r.top) / r.height };
   if (state.analyzed) toast(t('reanalyze'));
