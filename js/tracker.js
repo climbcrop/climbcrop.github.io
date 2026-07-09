@@ -127,11 +127,12 @@ export class Tracker {
   /**
    * Sample the trimmed range in a SINGLE linear playback pass (no per-frame seeking —
    * random seeks are the slow part). Plays muted at scanRate× and runs pose detection on
-   * frames spaced ~1/fps apart via requestVideoFrameCallback, then does subject tracking.
+   * EVERY delivered frame via requestVideoFrameCallback, then does subject tracking.
+   * scanRate 1 = real-time scan, one detection per frame (keeps up on typical clips);
+   * inference that can't keep up simply drops the odd frame — still near per-frame dense.
    */
-  async analyze(video, { start, end, fps = 8, seed = null, onProgress, signal, scanRate = 4 }) {
-    const step = 1 / fps;
-    const raw = [];                 // { t, cands } collected during the pass
+  async analyze(video, { start, end, seed = null, onProgress, signal, scanRate = 1 }) {
+    const raw = [];                 // { t, cands } collected during the pass, one per frame
 
     const wasMuted = video.muted, wasRate = video.playbackRate;
     video.muted = true;             // silent, and lets it play without a gesture
@@ -139,7 +140,7 @@ export class Tracker {
 
     try {
       await new Promise((resolve, reject) => {
-        let nextT = start, done = false, watchdog = 0;
+        let lastT = -1, done = false, watchdog = 0;
         const finish = (err) => {
           if (done) return; done = true;
           clearInterval(watchdog);
@@ -157,12 +158,12 @@ export class Tracker {
         const onFrame = (now, meta) => {
           if (done) return;
           const t = meta.mediaTime;
-          if (t + 1e-3 >= nextT) {
+          if (t > lastT + 1e-4) {   // detect on every distinct frame
+            lastT = t;
             let result;
             try { result = this.landmarker.detect(video); }
             catch { result = { landmarks: [] }; }
             raw.push({ t, cands: (result.landmarks || []).map(poseInfo).filter(Boolean) });
-            nextT = t + step;       // advance from the actual frame time (no backlog build-up)
             onProgress?.(Math.min(1, (t - start) / Math.max(0.001, end - start)));
           }
           if (t >= end - 1e-3 || video.ended) { finish(); return; }
