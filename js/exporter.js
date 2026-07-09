@@ -63,15 +63,33 @@ export async function exportVideo({
   };
 
   await new Promise((resolve) => {
+    let settled = false;
+    const end = () => {
+      if (settled) return;
+      settled = true;
+      video.removeEventListener('ended', end);
+      clearInterval(watchdog);
+      onProgress?.(1);
+      finish();
+      resolve();
+    };
     const tick = () => {
+      if (settled) return;
       const t = video.currentTime;
-      if (signal?.aborted || t >= trimEnd || video.ended) { finish(); resolve(); return; }
+      if (signal?.aborted || t >= trimEnd || video.ended) { end(); return; }
       const rate = speedAt(t);
       if (Math.abs(video.playbackRate - rate) > 0.001) video.playbackRate = rate;
       drawFrame(ctx, canvas, t);
       onProgress?.((t - trimStart) / Math.max(0.001, trimEnd - trimStart));
       video.requestVideoFrameCallback(tick);
     };
+    // 'ended' fires when trimEnd == video end (no more frames → rVFC would stall).
+    video.addEventListener('ended', end);
+    // Watchdog: also catch stalls / paused-at-end where neither rVFC nor 'ended' fire.
+    const watchdog = setInterval(() => {
+      if (settled) return;
+      if (signal?.aborted || video.ended || video.currentTime >= trimEnd - 0.03) end();
+    }, 200);
     video.requestVideoFrameCallback(tick);
   });
 
