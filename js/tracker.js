@@ -124,33 +124,73 @@ export class Tracker {
     }
   }
 
-  /** Sample the video between start/end and return {t, det} samples with gaps filled. */
-  async analyze(video, { start, end, fps = 8, seed = null, onProgress, signal }) {
-    const samples = [];
-    let prev = null, prevT = null;      // last accepted detection + its time
-    let vx = 0, vy = 0;                  // subject velocity (normalized units / sec)
-    let missedT = 0;                     // seconds since last accepted detection
+  /**
+   * Sample the trimmed range in a SINGLE linear playback pass (no per-frame seeking —
+   * random seeks are the slow part). Plays muted at scanRate× and runs pose detection on
+   * frames spaced ~1/fps apart via requestVideoFrameCallback, then does subject tracking.
+   */
+  async analyze(video, { start, end, fps = 8, seed = null, onProgress, signal, scanRate = 4 }) {
     const step = 1 / fps;
-    const MAX_V = 1.5;                   // clamp velocity so prediction can't fling the anchor
+    const raw = [];                 // { t, cands } collected during the pass
 
-    for (let t = start; t <= end + 1e-4; t += step) {
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      await seekTo(video, t);
-      let result;
-      try { result = this.landmarker.detect(video); }
-      catch { result = { landmarks: [] }; }
-      const cands = (result.landmarks || []).map(poseInfo).filter(Boolean);
+    const wasMuted = video.muted, wasRate = video.playbackRate;
+    video.muted = true;             // silent, and lets it play without a gesture
+    await seekTo(video, start);
 
-      // Predicted anchor = last position + velocity·elapsed; tolerance grows with the gap.
+    try {
+      await new Promise((resolve, reject) => {
+        let nextT = start, done = false;
+        const finish = (err) => {
+          if (done) return; done = true;
+          video.pause();
+          signal?.removeEventListener('abort', onAbort);
+          err ? reject(err) : resolve();
+        };
+        const onAbort = () => finish(new DOMException('Aborted', 'AbortError'));
+        if (signal) {
+          if (signal.aborted) return onAbort();
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+        const onFrame = (now, meta) => {
+          if (done) return;
+          const t = meta.mediaTime;
+          if (t + 1e-3 >= nextT) {
+            let result;
+            try { result = this.landmarker.detect(video); }
+            catch { result = { landmarks: [] }; }
+            raw.push({ t, cands: (result.landmarks || []).map(poseInfo).filter(Boolean) });
+            nextT = t + step;       // advance from the actual frame time (no backlog build-up)
+            onProgress?.(Math.min(1, (t - start) / Math.max(0.001, end - start)));
+          }
+          if (t >= end - 1e-3 || video.ended) { finish(); return; }
+          video.requestVideoFrameCallback(onFrame);
+        };
+        video.playbackRate = scanRate;
+        video.requestVideoFrameCallback(onFrame);
+        video.play().then(() => {}, finish);
+      });
+    } finally {
+      video.pause();
+      video.muted = wasMuted;
+      video.playbackRate = wasRate;
+    }
+
+    if (raw.length < 2) return { samples: null, rate: 0 };
+
+    // ── Subject tracking over the collected frames (predict + adaptive re-acquire) ──
+    const samples = [];
+    let prev = null, prevT = null, vx = 0, vy = 0;
+    const MAX_V = 1.5;
+    let detected = 0;
+    for (const { t, cands } of raw) {
       let anchor = null, maxJump = 0.42;
       if (prev) {
         const dt = t - prevT;
         anchor = { cx: prev.cx + vx * dt, cy: prev.cy + vy * dt };
-        maxJump = 0.16 + 0.28 * missedT;          // re-acquire window widens each missed frame
+        maxJump = Math.min(0.6, 0.16 + 0.28 * dt);   // widen as time since last hit grows
       } else if (seed) {
-        anchor = seed; maxJump = 0.42;
+        anchor = seed;
       }
-
       const det = pickPose(cands, anchor, maxJump);
       if (det) {
         if (prev && t > prevT) {
@@ -158,19 +198,17 @@ export class Tracker {
           vx = clampV((det.cx - prev.cx) / dt, MAX_V);
           vy = clampV((det.cy - prev.cy) / dt, MAX_V);
         }
-        prev = det; prevT = t; missedT = 0;
+        prev = det; prevT = t; detected++;
       } else {
-        missedT += step;
-        vx *= 0.7; vy *= 0.7;                      // decay stale velocity while searching
+        vx *= 0.7; vy *= 0.7;
       }
       samples.push({ t, det });
-      onProgress?.(Math.min(1, (t - start) / Math.max(0.001, end - start)));
     }
 
-    const detected = samples.filter(s => s.det).length;
     const ok = fillGaps(samples);
     if (!ok) return { samples: null, rate: 0 };
-    return { samples, rate: detected / samples.length, fps };
+    const effFps = (samples.length - 1) / Math.max(0.001, end - start);
+    return { samples, rate: detected / samples.length, fps: effFps };
   }
 }
 

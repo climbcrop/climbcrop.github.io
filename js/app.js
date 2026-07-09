@@ -72,7 +72,7 @@ function rebuildPath() {
   if (!state.samples) { state.path = null; return; }
   state.path = buildPath(state.samples, {
     vw: state.vw, vh: state.vh, ar: arVal(),
-    zoom: state.zoom, smooth: state.smooth, fps: ANALYZE_FPS,
+    zoom: state.zoom, smooth: state.smooth, fps: state.sampleFps || ANALYZE_FPS,
   });
 }
 
@@ -349,17 +349,26 @@ function maybeLoadAd() {
   try { (window.adsbygoogle = window.adsbygoogle || []).push({}); adLoaded = true; } catch { /* blocked */ }
 }
 
+let modalT0 = 0;
 function showModal(titleKey) {
   $('#modalTitle').textContent = t(titleKey);
   progressFill.style.width = '0%';
   progressPct.textContent = '0%';
+  $('#modalNote').textContent = t('processingNote');
+  modalT0 = performance.now();
   modal.classList.remove('hidden');
   maybeLoadAd();
 }
 function setProgress(f) {
-  const p = Math.round(clamp(f, 0, 1) * 100);
+  f = clamp(f, 0, 1);
+  const p = Math.round(f * 100);
   progressFill.style.width = `${p}%`;
   progressPct.textContent = `${p}%`;
+  if (f > 0.03 && f < 1) {
+    const elapsed = (performance.now() - modalT0) / 1000;
+    const eta = Math.ceil(elapsed / f - elapsed);
+    if (isFinite(eta) && eta >= 0) $('#modalNote').textContent = t('eta', { s: eta });
+  }
 }
 function hideModal() { modal.classList.add('hidden'); }
 function setIndeterminate(on) {
@@ -385,7 +394,8 @@ $('#analyzeBtn').addEventListener('click', async () => {
   try {
     await tracker.init();
     $('#modalTitle').textContent = t('analyzing');
-    const { samples, rate } = await tracker.analyze(video, {
+    modalT0 = performance.now();
+    const { samples, rate, fps } = await tracker.analyze(video, {
       start: state.trimStart, end: state.trimEnd, fps: ANALYZE_FPS,
       seed: state.seed, onProgress: setProgress, signal: abortCtl.signal,
     });
@@ -395,6 +405,7 @@ $('#analyzeBtn').addEventListener('click', async () => {
       return;
     }
     state.samples = samples;
+    state.sampleFps = fps;
     state.analyzed = true;
     rebuildPath();
     const p = Math.round(rate * 100);
