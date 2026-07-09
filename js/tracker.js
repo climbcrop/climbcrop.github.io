@@ -139,14 +139,17 @@ export class Tracker {
 
     try {
       await new Promise((resolve, reject) => {
-        let nextT = start, done = false;
+        let nextT = start, done = false, watchdog = 0;
         const finish = (err) => {
           if (done) return; done = true;
-          video.pause();
+          clearInterval(watchdog);
+          video.removeEventListener('ended', onEnded);
           signal?.removeEventListener('abort', onAbort);
+          video.pause();
           err ? reject(err) : resolve();
         };
         const onAbort = () => finish(new DOMException('Aborted', 'AbortError'));
+        const onEnded = () => finish();   // trimEnd == video end → no more frames to sample
         if (signal) {
           if (signal.aborted) return onAbort();
           signal.addEventListener('abort', onAbort, { once: true });
@@ -165,6 +168,12 @@ export class Tracker {
           if (t >= end - 1e-3 || video.ended) { finish(); return; }
           video.requestVideoFrameCallback(onFrame);
         };
+        video.addEventListener('ended', onEnded);
+        // Watchdog: rVFC stops firing once playback ends/stalls near the clip end.
+        watchdog = setInterval(() => {
+          if (done) return;
+          if (video.ended || video.currentTime >= end - 0.03) finish();
+        }, 200);
         video.playbackRate = scanRate;
         video.requestVideoFrameCallback(onFrame);
         video.play().then(() => {}, finish);
