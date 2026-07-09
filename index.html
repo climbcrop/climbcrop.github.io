@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>ClimbCrop — Auto-crop climbing videos</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<meta name="description" content="Auto-crop your climbing videos around the climber, entirely in your browser.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧗</text></svg>">
+<link rel="stylesheet" href="css/style.css?v=2">
+<meta property="og:title" content="ClimbCrop — 등반 영상 자동 크롭">
+<meta property="og:description" content="고정 시점 등반 영상을 브라우저에서 클라이머 자동 추적으로 세로 크롭.">
+<meta property="og:type" content="website">
+<!-- ════════ Google AdSense ════════
+     승인 절차:
+     1) https://adsense.google.com 가입 → 사이트에 climbcrop.github.io 추가
+     2) 발급받은 게시자 ID(ca-pub-XXXX)로 아래 ADSENSE_CLIENT 값을 교체하고 push
+     3) ads.txt 의 pub-ID도 동일하게 교체
+     4) 승인되면 광고 유닛을 만들어 slot ID를 .ad-slot 안에 붙여넣기 (js/app.js 참고 위치)
+     ADSENSE_CLIENT 가 'ca-pub-0000000000000000' 이면 로더는 로드되지 않습니다(개발 중 안전). -->
+<script>window.ADSENSE_CLIENT='ca-pub-0000000000000000';</script>
+<script>
+  (function(){
+    var c = window.ADSENSE_CLIENT;
+    if (c && !/0000000000000000/.test(c)) {
+      var s = document.createElement('script');
+      s.async = true;
+      s.crossOrigin = 'anonymous';
+      s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + c;
+      document.head.appendChild(s);
+    }
+  })();
+</script>
+</head>
+<body>
+<!-- 3D climbing-wall backdrop -->
+<div class="scene" id="scene" aria-hidden="true">
+  <div class="camera" id="wallCamera">
+    <div class="wall side" id="wallSide"></div>
+    <div class="wall main" id="wallMain"></div>
+    <div class="mats"></div>
+  </div>
+  <div class="scene-glow"></div>
+</div>
+
+<header class="topbar">
+  <div class="logo">🧗 <span>Climb<em>Crop</em></span></div>
+  <button id="langBtn" class="glass chip" title="Language"></button>
+</header>
+
+<main>
+  <!-- ─────────── Upload screen ─────────── -->
+  <section id="screen-upload" class="screen">
+    <div class="hero glass">
+      <h1 data-i18n="tagline1">클라이머만 따라가는 자동 크롭</h1>
+      <p class="sub" data-i18n="tagline2">고정 시점 등반 영상을 올리면, 브라우저가 주인공을 추적해 세로 영상으로 편집해 드립니다.</p>
+      <label id="dropzone" class="dropzone" for="fileInput" tabindex="0">
+        <div class="dz-icon">📼</div>
+        <div class="dz-title" data-i18n="dropTitle">여기에 영상을 끌어다 놓으세요</div>
+        <div class="dz-sub" data-i18n="dropSub">또는 클릭해서 선택 — MP4 · MOV · WebM</div>
+        <input type="file" id="fileInput" accept="video/*" hidden>
+      </label>
+      <div class="feat-chips">
+        <span class="feat">🎯 <span data-i18n="feat1">AI 클라이머 추적</span></span>
+        <span class="feat">🔒 <span data-i18n="feat2">100% 로컬 처리</span></span>
+        <span class="feat">📱 <span data-i18n="feat3">9:16 · 5:4 · 1:1</span></span>
+      </div>
+      <p class="privacy">🔒 <span data-i18n="privacy">100% 로컬 처리 — 영상은 절대 업로드되지 않습니다.</span></p>
+    </div>
+  </section>
+
+  <!-- ─────────── Editor screen ─────────── -->
+  <section id="screen-editor" class="screen hidden">
+    <div class="editor-grid">
+      <div class="preview-col glass">
+        <div class="canvas-wrap">
+          <canvas id="preview"></canvas>
+          <div id="seedHint" class="seed-hint" data-i18n="seedHint">💡 미리보기에서 주인공을 클릭하면 추적이 더 정확해져요</div>
+        </div>
+        <div class="transport">
+          <button id="playBtn" class="glass icon-btn" title="Play/Pause">▶</button>
+          <span id="timeLabel" class="time-label">0:00.0 / 0:00.0</span>
+          <div class="spacer"></div>
+          <div class="view-toggle glass">
+            <button id="viewFullBtn" class="active" data-i18n="viewFull">원본</button>
+            <button id="viewCropBtn" data-i18n="viewCrop">크롭</button>
+          </div>
+        </div>
+        <div class="timeline" id="timeline">
+          <canvas class="tl-strip" id="tlStrip"></canvas>
+          <div class="tl-band-layer" id="bandLayer"></div>
+          <div class="tl-shade left" id="shadeL"></div>
+          <div class="tl-shade right" id="shadeR"></div>
+          <div class="tl-handle" id="hStart" data-role="start"><i></i></div>
+          <div class="tl-handle" id="hEnd" data-role="end"><i></i></div>
+          <div class="tl-marker" id="hClimb" data-role="climb" title="Climb start">🚩</div>
+          <div class="tl-playhead" id="playhead"></div>
+        </div>
+        <div class="tl-legend">
+          <span>✂️ <span data-i18n="trimLabel">시작/끝 트림</span>: <b id="trimLabelVal"></b></span>
+          <span>🚩 <span data-i18n="climbStartShort">등반 시작</span>: <b id="climbLabelVal"></b></span>
+        </div>
+      </div>
+
+      <aside class="settings glass">
+        <h2 data-i18n="settings">설정</h2>
+
+        <div class="field">
+          <label data-i18n="aspect">화면비</label>
+          <div class="segmented" id="aspectSeg">
+            <button data-ar="916">9:16</button>
+            <button data-ar="54" class="active">5:4</button>
+            <button data-ar="11">1:1</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label><span data-i18n="cropSize">크롭 크기 (줌)</span> <output id="zoomVal"></output></label>
+          <input type="range" id="zoomSlider" min="30" max="100" value="55">
+          <div class="range-hints"><span data-i18n="zoomTight">타이트</span><span data-i18n="zoomWide">전체 뷰</span></div>
+        </div>
+
+        <div class="field">
+          <label><span data-i18n="smoothness">움직임 부드러움</span> <output id="smoothVal"></output></label>
+          <input type="range" id="smoothSlider" min="0" max="100" value="60">
+          <div class="range-hints"><span data-i18n="smoothLow">다이나믹</span><span data-i18n="smoothHigh">부드럽게</span></div>
+        </div>
+
+        <div class="field boxed">
+          <label data-i18n="introZoom">인트로 줌 (전체 뷰 → 확대)</label>
+          <div class="row">
+            <button id="setClimbBtn" class="mini-btn">🚩 <span data-i18n="setHere">현재 위치로 설정</span></button>
+            <b id="climbStartVal" class="mono"></b>
+          </div>
+          <label class="sub-label"><span data-i18n="zoomDur">확대 시간</span> <output id="zoomDurVal"></output></label>
+          <input type="range" id="zoomDurSlider" min="5" max="60" value="25">
+        </div>
+
+        <div class="field">
+          <label data-i18n="skeleton">스켈레톤 오버레이</label>
+          <div class="segmented" id="skelSeg">
+            <button data-skel="off" class="active" data-i18n="skelOff">끄기</button>
+            <button data-skel="intro" data-i18n="skelIntro">시작만</button>
+            <button data-skel="always" data-i18n="skelAlways">항상</button>
+          </div>
+        </div>
+
+        <div class="field boxed">
+          <label data-i18n="speed">배속 구간 (슬로모 / 빨리감기)</label>
+          <div id="segmentList" class="segment-list"></div>
+          <button id="addSegBtn" class="mini-btn">＋ <span data-i18n="addSpeed">현재 위치에 구간 추가</span></button>
+          <p class="hint" data-i18n="speedHint">오디오 피치는 유지된 채 속도만 변합니다.</p>
+        </div>
+
+        <div class="actions">
+          <button id="analyzeBtn" class="btn primary">🎯 <span data-i18n="analyze">클라이머 분석</span></button>
+          <button id="exportBtn" class="btn accent" disabled>🎬 <span data-i18n="export">영상 내보내기</span></button>
+          <p id="trackInfo" class="hint"></p>
+          <button id="restartBtn" class="btn ghost" data-i18n="startOver">처음부터 다시</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ─────────── Result screen ─────────── -->
+  <section id="screen-result" class="screen hidden">
+    <div class="result glass">
+      <h1 data-i18n="resultTitle">🎉 영상이 완성됐어요!</h1>
+      <video id="resultVideo" controls playsinline></video>
+      <div class="share-row">
+        <a id="downloadBtn" class="btn primary" download>⬇️ <span data-i18n="download">다운로드</span></a>
+        <button id="shareBtn" class="btn accent">📤 <span data-i18n="share">공유</span></button>
+        <button id="shareInsta" class="btn glassy">📸 Instagram</button>
+        <button id="shareKakao" class="btn glassy">💬 KakaoTalk</button>
+      </div>
+      <p class="hint" data-i18n="shareHint">모바일에서는 공유 버튼으로 인스타그램·카카오톡에 바로 보낼 수 있어요.</p>
+      <div class="row center">
+        <button id="backToEditBtn" class="btn ghost" data-i18n="backToEdit">편집으로 돌아가기</button>
+        <button id="restartBtn2" class="btn ghost" data-i18n="startOver">처음부터 다시</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ─────────── Processing modal ─────────── -->
+<div id="modal" class="modal hidden">
+  <div class="modal-card glass">
+    <h2 id="modalTitle"></h2>
+    <div class="progress"><div id="progressFill" class="progress-fill"></div></div>
+    <div class="progress-meta"><span id="progressPct">0%</span><span id="modalNote" data-i18n="processingNote">처리 중에는 이 탭을 화면에 유지해 주세요.</span></div>
+    <div class="ad-slot" id="adSlot" data-ad-slot="0000000000">
+      <!-- 승인 후: 위 ADSENSE_CLIENT 를 교체하고, data-ad-slot 을 광고 유닛의 slot ID로 바꾸면
+           app.js 가 모달이 열릴 때 자동으로 광고를 삽입합니다. -->
+      <span class="ad-ph" data-i18n="adPh">광고 영역</span>
+    </div>
+    <button id="cancelBtn" class="btn ghost" data-i18n="cancel">취소</button>
+  </div>
+</div>
+
+<script>
+// Surface fatal errors instead of failing silently (module load failures, CDN blocks, file:// …)
+(function () {
+  if (location.protocol === 'file:') {
+    document.addEventListener('DOMContentLoaded', function () { showErr('이 앱은 file://로 열 수 없어요. 로컬 서버로 실행해 주세요: python -m http.server 8787 → http://localhost:8787'); });
+  }
+  window.showErr = function (msg) {
+    var b = document.getElementById('errBanner');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'errBanner';
+      b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;background:rgba(190,30,50,.92);color:#fff;padding:10px 16px;font-size:.85rem;backdrop-filter:blur(8px);white-space:pre-wrap';
+      document.body.appendChild(b);
+    }
+    b.textContent = '⚠️ ' + msg;
+  };
+  window.addEventListener('error', function (e) {
+    if (e.message) showErr(e.message + (e.filename ? '\n' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    showErr(r && r.message ? r.message : (typeof r === 'string' ? r : 'Unexpected error: ' + Object.prototype.toString.call(r)));
+  });
+  // Watchdog: if the user picks a file but the app module never loaded, say so instead of doing nothing.
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'fileInput' && !window.__ccAppReady) {
+      showErr('앱 스크립트가 로드되지 않아 파일을 처리할 수 없어요. 새로고침(Ctrl+F5) 후에도 반복되면 F12 → Console 탭의 에러를 확인해 주세요.\nApp script failed to load — hard-refresh (Ctrl+F5) or check F12 → Console.');
+    }
+  }, true);
+})();
+</script>
+<script src="js/wall.js?v=2" defer></script>
+<script type="module" src="js/app.js?v=2"></script>
+</body>
+</html>

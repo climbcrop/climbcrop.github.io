@@ -1,0 +1,8 @@
+# OS / editor
+Thumbs.db
+.DS_Store
+*.log
+.vscode/
+
+# local scratch
+*.tmp

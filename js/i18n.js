@@ -1,0 +1,144 @@
+// ─────────── i18n: EN / KO with auto-detect + localStorage cache ───────────
+const dict = {
+  en: {
+    tagline1: 'Auto-crop that follows the climber',
+    tagline2: 'Upload a fixed-camera climbing video and your browser tracks the climber and edits it into a vertical clip.',
+    dropTitle: 'Drop your climbing video here',
+    dropSub: 'or click to browse — MP4 · MOV · WebM',
+    privacy: '100% local processing — your video never leaves your device.',
+    feat1: 'AI climber tracking',
+    feat2: '100% on-device',
+    feat3: '9:16 · 5:4 · 1:1',
+    settings: 'Settings',
+    aspect: 'Aspect ratio',
+    cropSize: 'Crop size (zoom)',
+    zoomTight: 'tight', zoomWide: 'full view',
+    smoothness: 'Motion smoothness',
+    smoothLow: 'dynamic', smoothHigh: 'smooth',
+    introZoom: 'Intro zoom (full view → close-up)',
+    setHere: 'Set to playhead',
+    zoomDur: 'Zoom-in duration',
+    skeleton: 'Skeleton overlay',
+    skelOff: 'Off', skelIntro: 'Intro only', skelAlways: 'Always',
+    speed: 'Speed sections (slow-mo / fast-forward)',
+    addSpeed: 'Add section at playhead',
+    speedHint: 'Audio pitch is preserved — only the speed changes.',
+    analyze: 'Analyze climber',
+    export: 'Export video',
+    startOver: 'Start over',
+    backToEdit: 'Back to editing',
+    viewFull: 'Original', viewCrop: 'Cropped',
+    trimLabel: 'Trim in/out',
+    climbStartShort: 'Climb start',
+    seedHint: '💡 Click the climber in the preview to improve tracking',
+    processingNote: 'Keep this tab visible while processing.',
+    cancel: 'Cancel',
+    adPh: 'AD SPACE',
+    analyzing: 'Analyzing climber…',
+    loadingModel: 'Loading AI model…',
+    loadingVideo: 'Loading video…',
+    videoLoadFail: 'Could not open this video — the codec may be unsupported (e.g. iPhone HEVC). Try converting to H.264 MP4, or use the latest Chrome/Edge.',
+    exporting: 'Exporting video… (audio included, muted while exporting)',
+    resultTitle: '🎉 Your video is ready!',
+    download: 'Download',
+    share: 'Share',
+    shareHint: 'On mobile, the Share button sends straight to Instagram or KakaoTalk.',
+    shareNoFiles: 'File sharing is not supported in this browser — download the video and share it manually.',
+    analyzeFirst: 'Run “Analyze climber” before exporting.',
+    analyzeDone: 'Climber detected in {p}% of sampled frames.',
+    analyzeLow: 'Detection rate is low ({p}%) — try clicking the climber in the preview and re-analyzing.',
+    reanalyze: 'Settings that affect tracking changed — re-run analysis for best results.',
+    canceled: 'Canceled.',
+    exportFail: 'Export failed: ',
+    speedStart: 'start', speedEnd: 'end',
+  },
+  ko: {
+    tagline1: '클라이머만 따라가는 자동 크롭',
+    tagline2: '고정 시점 등반 영상을 올리면, 브라우저가 주인공을 추적해 세로 클립으로 편집해 드립니다.',
+    dropTitle: '여기에 영상을 끌어다 놓으세요',
+    dropSub: '또는 클릭해서 선택 — MP4 · MOV · WebM',
+    privacy: '100% 로컬 처리 — 영상은 절대 서버로 업로드되지 않습니다.',
+    feat1: 'AI 클라이머 추적',
+    feat2: '100% 기기 내 처리',
+    feat3: '9:16 · 5:4 · 1:1',
+    settings: '설정',
+    aspect: '화면비',
+    cropSize: '크롭 크기 (줌)',
+    zoomTight: '타이트', zoomWide: '전체 뷰',
+    smoothness: '움직임 부드러움',
+    smoothLow: '다이나믹', smoothHigh: '부드럽게',
+    introZoom: '인트로 줌 (전체 뷰 → 확대)',
+    setHere: '현재 위치로 설정',
+    zoomDur: '확대 시간',
+    skeleton: '스켈레톤 오버레이',
+    skelOff: '끄기', skelIntro: '시작만', skelAlways: '항상',
+    speed: '배속 구간 (슬로모 / 빨리감기)',
+    addSpeed: '현재 위치에 구간 추가',
+    speedHint: '오디오 피치는 유지된 채 속도만 변합니다.',
+    analyze: '클라이머 분석',
+    export: '영상 내보내기',
+    startOver: '처음부터 다시',
+    backToEdit: '편집으로 돌아가기',
+    viewFull: '원본', viewCrop: '크롭',
+    trimLabel: '시작/끝 트림',
+    climbStartShort: '등반 시작',
+    seedHint: '💡 미리보기에서 주인공을 클릭하면 추적이 더 정확해져요',
+    processingNote: '처리 중에는 이 탭을 화면에 유지해 주세요.',
+    cancel: '취소',
+    adPh: '광고 영역',
+    analyzing: '클라이머 분석 중…',
+    loadingModel: 'AI 모델 로딩 중…',
+    loadingVideo: '영상 불러오는 중…',
+    videoLoadFail: '영상을 열 수 없어요 — 코덱 미지원일 수 있어요(예: 아이폰 HEVC). H.264 MP4로 변환하거나 최신 Chrome/Edge를 사용해 주세요.',
+    exporting: '영상 내보내는 중… (오디오 포함, 내보내는 동안은 무음)',
+    resultTitle: '🎉 영상이 완성됐어요!',
+    download: '다운로드',
+    share: '공유',
+    shareHint: '모바일에서는 공유 버튼으로 인스타그램·카카오톡에 바로 보낼 수 있어요.',
+    shareNoFiles: '이 브라우저는 파일 공유를 지원하지 않아요 — 다운로드 후 직접 공유해 주세요.',
+    analyzeFirst: '내보내기 전에 “클라이머 분석”을 먼저 실행해 주세요.',
+    analyzeDone: '샘플 프레임의 {p}%에서 클라이머를 감지했어요.',
+    analyzeLow: '감지율이 낮아요 ({p}%) — 미리보기에서 주인공을 클릭한 뒤 다시 분석해 보세요.',
+    reanalyze: '추적에 영향을 주는 설정이 바뀌었어요 — 다시 분석하면 더 정확해요.',
+    canceled: '취소되었습니다.',
+    exportFail: '내보내기 실패: ',
+    speedStart: '시작', speedEnd: '끝',
+  },
+};
+
+let lang = 'en';
+
+export function detectLang() {
+  const saved = localStorage.getItem('climbcrop-lang');
+  if (saved === 'ko' || saved === 'en') return saved;
+  const nav = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+  return nav.startsWith('ko') ? 'ko' : 'en';
+}
+
+export function getLang() { return lang; }
+
+export function setLang(l) {
+  lang = l;
+  localStorage.setItem('climbcrop-lang', l);
+  applyI18n();
+}
+
+export function t(key, vars) {
+  let s = dict[lang][key] ?? dict.en[key] ?? key;
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, v);
+  return s;
+}
+
+export function applyI18n() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  const btn = document.getElementById('langBtn');
+  if (btn) btn.textContent = lang === 'ko' ? '🇰🇷 한국어' : '🇺🇸 English';
+}
+
+export function initI18n() {
+  lang = detectLang();
+  applyI18n();
+  const btn = document.getElementById('langBtn');
+  btn.addEventListener('click', () => setLang(lang === 'ko' ? 'en' : 'ko'));
+}
