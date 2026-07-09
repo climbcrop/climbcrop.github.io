@@ -30,24 +30,44 @@ python serve.py 8787
 
 **요구 브라우저**: Chrome/Edge 최신 버전 권장 (MediaRecorder MP4, requestVideoFrameCallback, WebGPU/WASM).
 
-## GitHub Pages 배포
-1. GitHub에 새 저장소 생성 (예: `climbcrop`)
-2. ```bash
+## GitHub Pages 배포 (조직 루트 사이트)
+`climbcrop` **조직**의 루트 사이트(`https://climbcrop.github.io`)로 띄우려면 레포 이름이
+**반드시 `climbcrop.github.io`** 여야 합니다.
+
+1. github.com → `climbcrop` 조직 → **New repository** → 이름 `climbcrop.github.io`,
+   **Public**, README/gitignore 체크 없이 빈 레포로 생성.
+2. 로컬(이 폴더)에서 push:
+   ```bash
    cd climbcrop
-   git init && git add -A && git commit -m "ClimbCrop v1"
-   git branch -M main
-   git remote add origin https://github.com/<계정>/climbcrop.git
+   git remote add origin https://github.com/climbcrop/climbcrop.github.io.git
    git push -u origin main
    ```
-3. 저장소 **Settings → Pages → Source: Deploy from a branch → main / (root)** 선택
-4. 몇 분 뒤 `https://<계정>.github.io/climbcrop/` 에서 접속
+   (첫 push 시 Git Credential Manager 창이 떠서 GitHub 로그인)
+3. **Settings → Pages** 에서 Source가 **Deploy from a branch → main / (root)** 인지 확인.
+   `*.github.io` 레포는 대개 자동으로 켜지며, 1~2분 뒤 `https://climbcrop.github.io` 에서 접속.
 
-모든 경로가 상대 경로라 서브패스에서도 그대로 동작합니다.
+모든 경로가 상대 경로라 서브패스/커스텀 도메인 어디서든 그대로 동작합니다.
 
-## 배포 전 체크리스트
-- **Google AdSense**: `index.html`의 `<head>` 주석과 `.ad-slot` 안 주석을 실제 클라이언트 ID/광고 유닛으로 교체. AdSense는 도메인 심사가 필요하므로 Pages 배포 후 사이트 등록 → 루트에 `ads.txt` 추가.
+## Google AdSense 연결
+> ⚠️ **중요**: AdSense는 "본인이 소유·제어하는 도메인"을 요구하는데, `climbcrop.github.io`는
+> 공유 subdomain이라 **승인이 거절되는 경우가 흔합니다**. 안정적인 수익화를 원하면
+> 커스텀 도메인(예: `climbcrop.app`, 연 1~2만원)을 사서 연결한 뒤 그 도메인으로 신청하세요.
+> (도메인 연결: 레포 루트에 `CNAME` 파일 한 줄 = 도메인, DNS에 CNAME `climbcrop.github.io`)
+
+1. https://adsense.google.com 가입 → **사이트 추가**에 배포 URL 입력.
+2. 발급받은 게시자 ID `ca-pub-XXXX`로:
+   - `index.html`의 `window.ADSENSE_CLIENT` 값 교체 → 로더 스크립트가 자동 활성화.
+   - `ads.txt`의 `pub-0000...` 줄 교체.
+   - 두 파일 push (AdSense 심사는 **라이브 사이트**에 로더가 있어야 진행됨).
+3. 승인되면 AdSense에서 **디스플레이 광고 유닛** 생성 → slot ID 복사 →
+   `index.html`의 `#adSlot` 요소 `data-ad-slot="..."`에 붙여넣기.
+   그러면 처리 모달이 열릴 때(`app.js`의 `maybeLoadAd`) 광고가 자동 삽입됩니다.
+
+`ADSENSE_CLIENT`가 기본 `ca-pub-0000...`인 동안에는 광고 로더가 로드되지 않아 개발 중에도 안전합니다.
+
+## 기타 체크리스트
 - **KakaoTalk 공유 고도화(선택)**: 현재는 시스템 공유 시트를 사용. 카카오 전용 버튼을 원하면 [Kakao Developers](https://developers.kakao.com)에서 JS 키 발급 + 사이트 도메인 등록 후 Kakao SDK `Kakao.Share` 연동.
-- **HTTPS**: GitHub Pages는 기본 HTTPS — Web Share API(파일 공유)와 AudioContext에 필요하므로 커스텀 도메인 사용 시에도 HTTPS 유지.
+- **HTTPS**: GitHub Pages는 기본 HTTPS — Web Share API(파일 공유)와 AudioContext에 필요. 커스텀 도메인도 Settings → Pages → *Enforce HTTPS* 체크.
 - CDN 의존성: MediaPipe(`cdn.jsdelivr.net`)와 모델(`storage.googleapis.com`)을 런타임에 로드 — 완전 오프라인이 필요하면 두 파일을 저장소에 받아 경로만 바꾸면 됨 (`js/tracker.js` 상단 상수).
 
 ## 구조
