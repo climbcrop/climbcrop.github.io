@@ -223,12 +223,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .site-footer{margin-top:44px;padding:10px 20px calc(34px + env(safe-area-inset-bottom));
   display:flex;flex-direction:column;align-items:center;gap:10px}
 .counter-scene{width:min(420px,90vw);cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;
-  display:flex;flex-direction:column;align-items:center;gap:6px;transition:transform .15s}
+  display:flex;flex-direction:column;align-items:center;gap:6px;transition:transform .15s;
+  filter:drop-shadow(0 14px 26px rgba(30,65,45,.18))}
 .counter-scene:hover{transform:translateY(-2px)}
 .counter-scene:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:16px}
-.counter-svg{width:100%;height:auto;display:block;filter:drop-shadow(0 14px 26px rgba(30,65,45,.18))}
-.wave-a{transform-box:view-box;transform-origin:112px 116px}
-.wave-b{transform-box:view-box;transform-origin:228px 116px}
+.counter-svg{width:100%;height:auto;display:block}
+.wave-a,.wave-b{transform-box:fill-box;transform-origin:50% 0}
 .wave-a.waving{animation:wave-left 2.2s ease-in-out}
 .wave-b.waving{animation:wave-right 2.2s ease-in-out}
 @keyframes wave-right{
@@ -242,7 +242,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
   82%{transform:rotate(131deg)} 100%{transform:rotate(0)}
 }
 /* chalk bag */
-.chalk{cursor:pointer;transform-box:view-box;transform-origin:325px 153px}
+.chalk{cursor:pointer;transform-box:fill-box;transform-origin:50% 100%}
 .chalk.shaking{animation:chalkShake .55s ease-in-out}
 @keyframes chalkShake{
   0%,100%{transform:translateY(0) rotate(0)}
