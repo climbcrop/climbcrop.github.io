@@ -224,7 +224,6 @@ export class Tracker {
     const samples = [];
     let prev = null, prevT = null, vx = 0, vy = 0, refH = 0;
     const MAX_V = 1.5, GRACE = 0.35;
-    const MIN_CONF = 0.5;        // below this a detection is too unreliable to move the crop
     let detected = 0;
     for (const { t, cands } of raw) {
       let det;
@@ -239,10 +238,12 @@ export class Tracker {
         det = dt <= GRACE
           ? pickPose(cands, anchor, 0.16 + 0.5 * dt)          // strict while briefly occluded
           : reacquire(cands, anchor, refH, dt);               // global re-acquire when lost
-        // Confidence + scale gate: a low-confidence pose (side-on/occluded) or one whose size
-        // is way off the tracked climber is a likely mis-detection — drop it and let the frame
-        // interpolate (i.e. hold the last good position, then ease to the next good one).
-        if (det && (det.conf < MIN_CONF || (refH && Math.abs(det.h - refH) / refH > 0.55))) det = null;
+        // Scale gate only. A detection near the predicted position is almost certainly the
+        // subject even if some landmarks are occluded (side-on) — trust its position and keep
+        // following, instead of rejecting on low confidence (which made the crop stop tracking
+        // through side-on climbs). Drop it only if the body size is wildly off (different
+        // person / bad fit); the prediction window already blocks big positional jumps.
+        if (det && refH && Math.abs(det.h - refH) / refH > 0.8) det = null;
       }
       if (det) {
         if (prev && t > prevT) {
@@ -286,8 +287,8 @@ function reacquire(cands, anchor, refH, dt) {
     if (score > bestScore) { bestScore = score; best = c; }
   }
   if (!best) return null;
-  if (refH && Math.abs(best.h - refH) / refH > 0.6) return null;   // too different in size
-  if ((best.conf ?? 0) < 0.4) return null;                          // too unreliable to re-lock
+  if (refH && Math.abs(best.h - refH) / refH > 0.7) return null;   // too different in size
+  if ((best.conf ?? 0) < 0.3) return null;                          // too unreliable to re-lock
   return best;
 }
 
@@ -346,11 +347,13 @@ export function buildPath(samples, { vw, vh, ar, zoom, smooth, fps }) {
     return [cxs[a] + (cxs[b] - cxs[a]) * f, cys[a] + (cys[b] - cys[a]) * f];
   }
 
-  function trackedBox(t) {
+  // offX/offY are optional manual-correction offsets in normalized frame units (0..1).
+  // The box is still clamped to the frame, so a manual nudge can never push it off-screen.
+  function trackedBox(t, offX = 0, offY = 0) {
     const [cx, cy] = centerAt(t);
     return {
-      x: clamp(cx - cropW / 2, 0, vw - cropW),
-      y: clamp(cy - cropH / 2, 0, vh - cropH),
+      x: clamp(cx + offX * vw - cropW / 2, 0, vw - cropW),
+      y: clamp(cy + offY * vh - cropH / 2, 0, vh - cropH),
       w: cropW, h: cropH,
     };
   }

@@ -38,6 +38,7 @@ const state = {
   trimStart: 0, trimEnd: 0, climbStart: 0, zoomDur: 2.5,
   arKey: '54', zoom: 0.55, smooth: 0.6, skel: 'off',
   segments: [],           // {start, end, speed}
+  manualAnchors: [],      // {t, dx, dy} manual framing corrections (normalized offsets)
   samples: null, path: null, seed: null,
   view: 'full', playing: false, analyzed: false,
   result: null,
@@ -103,12 +104,35 @@ function cropAt(tSec) {
     return { x: clamp(cx - w / 2, 0, state.vw - w), y: clamp(cy - h / 2, 0, state.vh - h), w, h };
   }
   if (tSec <= state.climbStart) return full;              // full view before the problem starts
-  const tracked = state.path.trackedBox(tSec);
+  const [ox, oy] = manualOffsetAt(tSec);
+  const tracked = state.path.trackedBox(tSec, ox, oy);
   if (tSec < state.climbStart + state.zoomDur) {           // gentle ease-in zoom
     const f = smoothstep((tSec - state.climbStart) / state.zoomDur);
     return lerpBox(full, tracked, f);
   }
   return tracked;
+}
+
+// Manual framing corrections: each anchor is a normalized offset {t, dx, dy} the user set by
+// dragging the crop preview. The offset fades to zero away from anchors (so auto-tracking takes
+// over), and interpolates between nearby anchors to sustain a correction across a segment.
+function manualOffsetAt(tSec) {
+  const A = state.manualAnchors;
+  if (!A.length) return [0, 0];
+  const W = 1.2;
+  let left = null, right = null;
+  for (const a of A) {
+    if (a.t <= tSec && (!left || a.t > left.t)) left = a;
+    if (a.t > tSec && (!right || a.t < right.t)) right = a;
+  }
+  if (left && right && right.t - left.t <= 2 * W) {       // sustained region between two anchors
+    const f = (tSec - left.t) / (right.t - left.t);
+    return [left.dx + (right.dx - left.dx) * f, left.dy + (right.dy - left.dy) * f];
+  }
+  const near = left && right ? (tSec - left.t < right.t - tSec ? left : right) : (left || right);
+  let w = Math.max(0, 1 - Math.abs(near.t - tSec) / W);
+  w = w * w * (3 - 2 * w);                                 // smoothstep falloff
+  return [near.dx * w, near.dy * w];
 }
 
 function speedAt(tSec) {
@@ -533,9 +557,11 @@ $('#analyzeBtn').addEventListener('click', async () => {
     state.samples = samples;
     state.sampleFps = fps;
     state.analyzed = true;
+    state.manualAnchors = [];   // fresh path → drop old manual corrections
     rebuildPath();
     $('#trackInfo').textContent = t(rate < 0.5 ? 'analyzeLow' : 'analyzeDone');
     $('#exportBtn').disabled = false;
+    updateManualUI();
     setView('crop');
     video.currentTime = state.trimStart;
   } catch (err) {
@@ -625,11 +651,17 @@ function setView(v) {
   state.view = v;
   $('#viewFullBtn').classList.toggle('active', v === 'full');
   $('#viewCropBtn').classList.toggle('active', v === 'crop');
+  cv.classList.toggle('pannable', v === 'crop' && state.analyzed);
   fitPreviewCanvas();
   drawPreview();
 }
 $('#viewFullBtn').addEventListener('click', () => setView('full'));
 $('#viewCropBtn').addEventListener('click', () => setView('crop'));
+$('#resetFramingBtn').addEventListener('click', () => {
+  state.manualAnchors = [];
+  updateManualUI();
+  drawPreview();
+});
 $('#playBtn').addEventListener('click', () => state.playing ? pause() : play());
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' && !$('#screen-editor').classList.contains('hidden')
@@ -733,7 +765,7 @@ $('#setClimbBtn').addEventListener('click', () => {
 
 // Pick the main climber — always on the FIRST frame so the lock matches where analysis starts.
 cv.addEventListener('click', e => {
-  if (state.view === 'crop' && state.analyzed) return;
+  if (state.view === 'crop' && state.analyzed) return; // crop view is for drag-reframe, not seeding
   if (Math.abs(video.currentTime - state.trimStart) > 0.15) {
     scrubTo(state.trimStart);            // jump to the first frame, then tap the climber
     toast(t('pickOnFirst'));
@@ -744,6 +776,50 @@ cv.addEventListener('click', e => {
   if (state.analyzed) toast(t('reanalyze'));
   drawPreview();
 });
+
+// Drag on the crop preview to manually reframe this moment (fixes segments the tracker misses).
+let panAnchor = null, panLast = null, panCreated = false;
+cv.addEventListener('pointerdown', e => {
+  if (!(state.view === 'crop' && state.analyzed && state.path)) return;
+  if (state.playing) pause();
+  cv.setPointerCapture(e.pointerId);
+  const tSec = video.currentTime;
+  panAnchor = state.manualAnchors.find(a => Math.abs(a.t - tSec) < 0.15);
+  if (!panAnchor) {
+    const [dx, dy] = manualOffsetAt(tSec);        // start from the current effective offset
+    panAnchor = { t: tSec, dx, dy };
+    state.manualAnchors.push(panAnchor);
+    state.manualAnchors.sort((a, b) => a.t - b.t);
+    panCreated = true;
+  } else panCreated = false;
+  panLast = { x: e.clientX, y: e.clientY };
+});
+cv.addEventListener('pointermove', e => {
+  if (!panAnchor) return;
+  const r = cv.getBoundingClientRect();
+  const cropFracX = state.path.cropW / state.vw;  // crop width as a fraction of the frame
+  const cropFracY = state.path.cropH / state.vh;
+  panAnchor.dx -= ((e.clientX - panLast.x) / r.width) * cropFracX;  // drag right → reveal left
+  panAnchor.dy -= ((e.clientY - panLast.y) / r.height) * cropFracY;
+  panLast = { x: e.clientX, y: e.clientY };
+  drawPreview();
+});
+function endPan() {
+  if (!panAnchor) return;
+  if (panCreated && Math.abs(panAnchor.dx) + Math.abs(panAnchor.dy) < 0.002) {
+    state.manualAnchors = state.manualAnchors.filter(a => a !== panAnchor); // discard no-op tap
+  }
+  panAnchor = null;
+  updateManualUI();
+}
+cv.addEventListener('pointerup', endPan);
+cv.addEventListener('pointercancel', endPan);
+
+function updateManualUI() {
+  const n = state.manualAnchors.length;
+  const btn = $('#resetFramingBtn');
+  if (btn) btn.style.display = n ? '' : 'none';
+}
 
 // ─────────── Upload / init ───────────
 async function loadVideo(file) {
@@ -780,7 +856,7 @@ function initEditor() {
     dur: video.duration, vw: video.videoWidth, vh: video.videoHeight,
     trimStart: 0, trimEnd: video.duration,
     climbStart: Math.min(1.5, video.duration * 0.15),
-    segments: [], samples: null, path: null, seed: null,
+    segments: [], manualAnchors: [], samples: null, path: null, seed: null,
     analyzed: false, result: null, view: 'full', playing: false,
   });
   $('#exportBtn').disabled = true;

@@ -109,6 +109,8 @@ main{max-width:1180px;margin:0 auto;padding:8px 20px 60px}
 .preview-col{padding:16px}
 .canvas-wrap{position:relative;display:flex;justify-content:center;background:rgba(20,45,32,.08);border-radius:12px;overflow:hidden}
 #preview{max-width:100%;max-height:58vh;display:block;cursor:crosshair}
+#preview.pannable{cursor:grab;touch-action:none}
+#preview.pannable:active{cursor:grabbing}
 .seed-hint{position:absolute;left:10px;bottom:10px;font-size:.76rem;background:rgba(10,20,14,.6);backdrop-filter:blur(8px);
   padding:6px 10px;border-radius:999px;color:rgba(255,255,255,.9);pointer-events:none}
 
