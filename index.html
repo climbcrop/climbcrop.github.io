@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0b1020">
+<meta name="theme-color" content="#eaf0ea">
 <title>ClimbCrop — Auto-crop climbing videos</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <meta name="description" content="Auto-crop your climbing videos around the climber, entirely in your browser.">
@@ -45,7 +45,7 @@
 </div>
 
 <header class="topbar">
-  <div class="logo">🧗 <span>Climb<em>Crop</em></span></div>
+  <div class="logo"><span>Climb<em>Crop</em></span></div>
   <button id="langBtn" class="glass chip" title="Language"></button>
 </header>
 
@@ -155,18 +155,11 @@
 
         <div class="field boxed">
           <label data-i18n="branding">브랜딩 워터마크 (오른쪽 아래)</label>
-          <label class="toggle-row">
-            <span data-i18n="showLogo">ClimbCrop 로고</span>
-            <input type="checkbox" id="wmLogo" checked>
-          </label>
+          <p class="hint" style="margin-top:0" data-i18n="brandingNote">ClimbCrop 로고는 항상 표시됩니다.</p>
           <label class="sub-label" data-i18n="difficulty">난이도 색</label>
           <div id="gradeDots" class="grade-dots"></div>
           <label class="sub-label" data-i18n="gymLogo">암장 로고 (선택)</label>
           <div id="gymChips" class="gym-chips"></div>
-          <div class="row" style="margin-top:8px">
-            <button id="gymUploadBtn" class="mini-btn">⬆ <span data-i18n="gymUpload">내 로고 업로드</span></button>
-            <input type="file" id="gymFile" accept="image/*" hidden>
-          </div>
         </div>
 
         <div class="actions">

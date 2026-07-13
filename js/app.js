@@ -27,18 +27,10 @@ const GRADES = [
   { key: 'brown',  color: '#92400e' }, { key: 'black',  color: '#111827' },
   { key: 'pink',   color: '#f9a8d4' }, { key: 'navy',   color: '#1e3a8a' },
 ];
-// Quick-pick gym text badges (Seoul/Daejeon). Editable; users can also upload their own logo.
-const SAMPLE_GYMS = [
-  { name: '더클라임', color: '#e11d48' },
-  { name: '서울숲클라이밍', color: '#0ea5e9' },
-  { name: '손상원클라이밍', color: '#f59e0b' },
-  { name: '볼더프렌즈', color: '#8b5cf6' },
-  { name: '피커스', color: '#10b981' },
-  { name: '클라이밍파크', color: '#3b82f6' },
-  { name: '알레클라이밍', color: '#ef4444' },
-  { name: '볼더프로젝트', color: '#14b8a6' },
-  { name: '실크로드', color: '#f97316' },
-  { name: '오르다클라이밍', color: '#a855f7' },
+// Gym logos bundled under public/images/. Add a file there + a line here to offer more.
+const GYMS = [
+  { name: 'Awake Climbing', src: 'public/images/awake.jpg' },
+  { name: 'The Climb', src: 'public/images/theclimb.jpg' },
 ];
 
 const state = {
@@ -49,7 +41,7 @@ const state = {
   samples: null, path: null, seed: null,
   view: 'full', playing: false, analyzed: false,
   result: null,
-  watermark: { showLogo: true, difficulty: null, gym: null }, // gym: {type:'text',name,color} | {type:'image',img}
+  watermark: { difficulty: null, gym: null }, // logo always on; gym: {type:'image',img,name}
 };
 
 // ─────────── Video element + audio graph ───────────
@@ -214,7 +206,6 @@ function roundRect(c, x, y, w, h, r) {
 // Sizes are relative to the canvas height, so it scales across preview and 1080p export.
 function drawWatermark(c, cw, ch) {
   const wm = state.watermark;
-  if (!wm.showLogo && !wm.difficulty && !wm.gym) return;
   const pad = Math.round(ch * 0.03);
   const h = Math.max(18, Math.round(ch * 0.052));
   const gap = Math.round(h * 0.34);
@@ -225,23 +216,18 @@ function drawWatermark(c, cw, ch) {
   c.shadowColor = 'rgba(0,0,0,.5)';
   c.shadowBlur = h * 0.18;
 
-  if (wm.showLogo) {
-    const fs = Math.round(h * 0.6);
-    const markFs = Math.round(fs * 1.15);
+  // ClimbCrop wordmark — mandatory. "Climb" white, "Crop" green, no emoji.
+  {
+    const fs = Math.round(h * 0.62);
     c.font = `800 ${fs}px "Pretendard Variable", system-ui, sans-serif`;
     const climbW = c.measureText('Climb').width;
     const cropW = c.measureText('Crop').width;
-    const markW = markFs * 1.05;
-    const boxW = h * 0.32 + markW + climbW + cropW + h * 0.34;
-    c.fillStyle = 'rgba(12,16,28,.5)';
+    const boxW = h * 0.34 + climbW + cropW + h * 0.34;
+    c.fillStyle = 'rgba(12,20,15,.5)';
     roundRect(c, x - boxW, yMid - h / 2, boxW, h, h / 2); c.fill();
     c.shadowBlur = 0;
     c.textAlign = 'left';
-    let tx = x - boxW + h * 0.28;
-    c.font = `${markFs}px system-ui, "Segoe UI Emoji"`;
-    c.fillStyle = '#fff';
-    c.fillText('🧗', tx, yMid + 1); tx += markW;
-    c.font = `800 ${fs}px "Pretendard Variable", system-ui, sans-serif`;
+    let tx = x - boxW + h * 0.34;
     c.fillStyle = '#fff'; c.fillText('Climb', tx, yMid); tx += climbW;
     c.fillStyle = '#34d399'; c.fillText('Crop', tx, yMid);
     x -= boxW + gap;
@@ -671,8 +657,6 @@ $('#skelSeg').addEventListener('click', e => {
 
 // ─────────── Watermark / branding controls ───────────
 function setupWatermarkUI() {
-  $('#wmLogo').addEventListener('change', e => { state.watermark.showLogo = e.target.checked; drawPreview(); });
-
   const dots = $('#gradeDots');
   GRADES.forEach(g => {
     const d = document.createElement('button');
@@ -689,40 +673,41 @@ function setupWatermarkUI() {
   });
 
   const chips = $('#gymChips');
-  SAMPLE_GYMS.forEach(gym => {
+  const none = document.createElement('button');
+  none.className = 'gym-chip none-opt active';
+  none.dataset.gym = '';
+  none.setAttribute('data-i18n', 'gymNone');
+  none.textContent = t('gymNone');
+  none.addEventListener('click', () => { state.watermark.gym = null; refreshGymChips(); drawPreview(); });
+  chips.appendChild(none);
+
+  GYMS.forEach(gym => {
     const b = document.createElement('button');
     b.className = 'gym-chip';
-    b.textContent = gym.name;
-    b.style.setProperty('--gym', gym.color);
+    b.dataset.gym = gym.name;
+    b.title = gym.name;
+    const img = new Image();
+    img.src = gym.src;
+    img.onload = () => { if (state.watermark.gym?.name === gym.name) drawPreview(); };
+    b.appendChild(img);
     b.addEventListener('click', () => {
-      const on = state.watermark.gym?.type === 'text' && state.watermark.gym.name === gym.name;
-      state.watermark.gym = on ? null : { type: 'text', name: gym.name, color: gym.color };
+      const on = state.watermark.gym?.name === gym.name;
+      state.watermark.gym = on ? null : { type: 'image', img, name: gym.name };
       refreshGymChips();
       drawPreview();
     });
     chips.appendChild(b);
   });
-
-  $('#gymUploadBtn').addEventListener('click', () => $('#gymFile').click());
-  $('#gymFile').addEventListener('change', e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const img = new Image();
-    img.onload = () => { state.watermark.gym = { type: 'image', img, name: '' }; refreshGymChips(); drawPreview(); };
-    img.onerror = () => toast(t('gymLoadFail'));
-    img.src = URL.createObjectURL(file);
-    e.target.value = '';
-  });
+  refreshGymChips();
 }
 function refreshGradeDots() {
   document.querySelectorAll('#gradeDots .grade-dot').forEach(d =>
     d.classList.toggle('active', d.dataset.color === state.watermark.difficulty));
 }
 function refreshGymChips() {
-  const g = state.watermark.gym;
+  const name = state.watermark.gym?.name || '';
   document.querySelectorAll('#gymChips .gym-chip').forEach(c =>
-    c.classList.toggle('active', g?.type === 'text' && g.name === c.textContent));
-  $('#gymUploadBtn').classList.toggle('active', g?.type === 'image');
+    c.classList.toggle('active', (c.dataset.gym || '') === name));
 }
 
 const zoomSlider = $('#zoomSlider'), smoothSlider = $('#smoothSlider'), zoomDurSlider = $('#zoomDurSlider');

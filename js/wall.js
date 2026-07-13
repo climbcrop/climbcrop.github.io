@@ -2,7 +2,8 @@
 // Plain (non-module) script so the backdrop always renders even if the app modules fail.
 (function () {
   'use strict';
-  var PALETTE = ['#fb7185', '#f59e0b', '#34d399', '#60a5fa', '#c084fc', '#facc15', '#2dd4bf', '#f97316'];
+  // Green-focused holds to match the white-wall theme (a couple of teal/mint accents).
+  var PALETTE = ['#10b981', '#34d399', '#059669', '#22c55e', '#6ee7b7', '#16a34a', '#4ade80', '#047857', '#2dd4bf', '#a7f3d0'];
 
   function rand(a, b) { return a + Math.random() * (b - a); }
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
