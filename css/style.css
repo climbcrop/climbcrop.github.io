@@ -15,7 +15,7 @@ html,body{height:100%}
 body{
   font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,system-ui,"Segoe UI",Roboto,"Malgun Gothic",sans-serif;
   background:var(--bg);color:var(--ink);
-  min-height:100vh;overflow-x:hidden;
+  min-height:100vh;overflow-x:hidden;padding-top:58px;
 }
 /* ─────────── 3D climbing-wall backdrop (white wall, green holds) ─────────── */
 .scene{position:fixed;inset:0;z-index:-2;overflow:hidden;perspective:950px;perspective-origin:50% 45%;
@@ -68,8 +68,11 @@ body{
   box-shadow:0 12px 40px rgba(30,65,45,.16),inset 0 1px 0 rgba(255,255,255,.9);
 }
 
-/* ─────────── Top bar ─────────── */
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;position:sticky;top:0;z-index:20}
+/* ─────────── Top bar (fixed page header) ─────────── */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:11px 22px;
+  position:fixed;top:0;left:0;right:0;height:58px;z-index:40;
+  background:rgba(255,255,255,.72);backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);
+  border-bottom:1px solid var(--stroke);box-shadow:0 2px 16px rgba(30,65,45,.08)}
 .logo{font-size:1.35rem;font-weight:800;letter-spacing:-.02em;display:flex;gap:8px;align-items:center}
 .logo em{color:var(--accent);font-style:normal}
 .chip{padding:8px 14px;border-radius:999px;color:var(--ink);cursor:pointer;font-size:.92rem;font-weight:600;transition:.2s}
@@ -104,7 +107,7 @@ main{max-width:1180px;margin:0 auto;padding:8px 20px 60px}
 @media(max-width:940px){.editor-grid{grid-template-columns:1fr}}
 
 .preview-col{padding:16px}
-.canvas-wrap{position:relative;display:flex;justify-content:center;background:rgba(0,0,0,.45);border-radius:12px;overflow:hidden}
+.canvas-wrap{position:relative;display:flex;justify-content:center;background:rgba(20,45,32,.08);border-radius:12px;overflow:hidden}
 #preview{max-width:100%;max-height:58vh;display:block;cursor:crosshair}
 .seed-hint{position:absolute;left:10px;bottom:10px;font-size:.76rem;background:rgba(10,20,14,.6);backdrop-filter:blur(8px);
   padding:6px 10px;border-radius:999px;color:rgba(255,255,255,.9);pointer-events:none}
@@ -169,7 +172,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .grade-dot:hover{transform:scale(1.12)}
 .grade-dot.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(16,185,129,.5),0 1px 4px rgba(40,75,52,.3);transform:scale(1.12)}
 .gym-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
-.gym-chip{width:52px;height:52px;border-radius:12px;overflow:hidden;padding:0;cursor:pointer;background:#fff;
+.gym-chip{width:52px;height:52px;border-radius:50%;overflow:hidden;padding:0;cursor:pointer;background:#fff;
   border:2px solid var(--stroke);transition:.15s;display:grid;place-items:center}
 .gym-chip img{width:100%;height:100%;object-fit:cover;display:block}
 .gym-chip:hover{transform:scale(1.05)}
@@ -215,6 +218,30 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .export-live{position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:-1}
 .ad-slot{min-height:120px;display:grid;place-items:center;border:1px dashed rgba(18,45,30,.2);border-radius:12px;background:rgba(255,255,255,.4)}
 .ad-ph{color:var(--ink-dim);font-size:.8rem;letter-spacing:.2em}
+
+/* ─────────── Footer: reception counter + waving character ─────────── */
+.site-footer{margin-top:44px;padding:10px 20px calc(34px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;align-items:center;gap:10px}
+.counter-scene{width:min(420px,90vw);cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;
+  display:flex;flex-direction:column;align-items:center;gap:6px;transition:transform .15s}
+.counter-scene:hover{transform:translateY(-2px)}
+.counter-scene:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:16px}
+.counter-svg{width:100%;height:auto;display:block;filter:drop-shadow(0 14px 26px rgba(30,65,45,.18))}
+.wave-arm{transform-box:view-box;transform-origin:240px 116px}
+.wave-arm.waving{animation:wave-once 2.2s ease-in-out}
+@keyframes wave-once{
+  0%   {transform:rotate(0deg)}
+  12%  {transform:rotate(-135deg)}
+  26%  {transform:rotate(-120deg)}
+  40%  {transform:rotate(-149deg)}
+  54%  {transform:rotate(-120deg)}
+  68%  {transform:rotate(-149deg)}
+  82%  {transform:rotate(-131deg)}
+  100% {transform:rotate(0deg)}
+}
+.counter-hint{font-size:.74rem;color:var(--ink-dim)}
+.footer-text{font-size:.8rem;color:var(--ink-dim)}
+@media (prefers-reduced-motion: reduce){.wave-arm.waving{animation:none}}
 
 /* toast */
 .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:rgba(14,40,28,.94);border:1px solid rgba(255,255,255,.12);

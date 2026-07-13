@@ -61,6 +61,26 @@
   decorate(document.getElementById('wallMain'), { volumes: 3, routes: 3, scatter: 26 });
   decorate(document.getElementById('wallSide'), { volumes: 1, routes: 1, scatter: 10 });
 
+  // Footer character: waves briefly on load, every few seconds, and on click.
+  (function () {
+    var scene = document.getElementById('counterScene');
+    if (!scene) return;
+    var arm = scene.querySelector('.wave-arm');
+    if (!arm) return;
+    function wave() {
+      arm.classList.remove('waving');
+      void arm.getBoundingClientRect();   // reflow so the animation restarts
+      arm.classList.add('waving');
+    }
+    arm.addEventListener('animationend', function () { arm.classList.remove('waving'); });
+    scene.addEventListener('click', wave);
+    scene.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); wave(); } });
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setTimeout(wave, 1200);
+      setInterval(wave, 6500);
+    }
+  })();
+
   // Pointer parallax via perspective-origin (doesn't fight the keyframe camera animation)
   var scene = document.getElementById('scene');
   var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;

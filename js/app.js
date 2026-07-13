@@ -244,25 +244,19 @@ function drawWatermark(c, cw, ch) {
     c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = h * 0.18;
   }
 
-  if (wm.gym) {
-    if (wm.gym.type === 'image' && wm.gym.img && wm.gym.img.complete) {
-      const ratio = wm.gym.img.naturalWidth / (wm.gym.img.naturalHeight || 1);
-      const w = Math.max(h, Math.min(h * 2.4, h * ratio));
-      c.shadowBlur = h * 0.18;
-      c.drawImage(wm.gym.img, x - w, yMid - h / 2, w, h);
-      x -= w + gap;
-    } else if (wm.gym.type === 'text') {
-      const fs = Math.round(h * 0.5);
-      c.font = `700 ${fs}px "Pretendard Variable", system-ui, sans-serif`;
-      const tw = c.measureText(wm.gym.name).width;
-      const boxW = tw + h * 0.62;
-      c.fillStyle = wm.gym.color || 'rgba(12,16,28,.6)';
-      roundRect(c, x - boxW, yMid - h / 2, boxW, h, h / 2); c.fill();
-      c.shadowBlur = 0;
-      c.fillStyle = '#fff'; c.textAlign = 'left';
-      c.fillText(wm.gym.name, x - boxW + h * 0.31, yMid);
-      x -= boxW + gap;
-    }
+  if (wm.gym && wm.gym.type === 'image' && wm.gym.img && wm.gym.img.complete) {
+    // Circular badge: clip square-ish logos to a circle (removes the opaque corners of a
+    // JPG, and respects the alpha of a transparent PNG — no background box is added).
+    const img = wm.gym.img;
+    const d = h, cxp = x - d / 2, cyp = yMid;
+    c.save();
+    c.beginPath(); c.arc(cxp, cyp, d / 2, 0, Math.PI * 2); c.clip();
+    const ratio = img.naturalWidth / (img.naturalHeight || 1);
+    let dw = d, dh = d;
+    if (ratio >= 1) dw = d * ratio; else dh = d / ratio;   // cover the disc
+    c.drawImage(img, cxp - dw / 2, cyp - dh / 2, dw, dh);
+    c.restore();
+    x -= d + gap;
   }
   c.restore();
 }

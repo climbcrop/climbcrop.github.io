@@ -192,6 +192,58 @@
   </section>
 </main>
 
+<!-- ─────────── Footer: climbing-gym reception, wave on click ─────────── -->
+<footer class="site-footer">
+  <div class="counter-scene" id="counterScene" title="👋" role="button" tabindex="0" aria-label="Wave back">
+    <svg class="counter-svg" viewBox="0 0 420 230" xmlns="http://www.w3.org/2000/svg">
+      <!-- wall -->
+      <rect x="0" y="0" width="420" height="210" rx="16" fill="#eef4ef"/>
+      <g fill="#d3e2d7">
+        <circle cx="40" cy="40" r="2.4"/><circle cx="110" cy="30" r="2.4"/><circle cx="180" cy="44" r="2.4"/>
+        <circle cx="300" cy="34" r="2.4"/><circle cx="380" cy="52" r="2.4"/><circle cx="60" cy="120" r="2.4"/>
+        <circle cx="360" cy="120" r="2.4"/><circle cx="250" cy="26" r="2.4"/>
+      </g>
+      <!-- green holds -->
+      <circle cx="66" cy="60" r="10" fill="#34d399"/>
+      <circle cx="350" cy="74" r="12" fill="#10b981"/>
+      <circle cx="120" cy="96" r="7" fill="#6ee7b7"/>
+      <circle cx="300" cy="120" r="8" fill="#059669"/>
+      <!-- sign -->
+      <g>
+        <rect x="150" y="26" width="120" height="30" rx="8" fill="#fff" stroke="#cfe0d4"/>
+        <text x="210" y="46" text-anchor="middle" font-family="Pretendard Variable, system-ui, sans-serif" font-size="15" font-weight="800" fill="#12241a">Climb<tspan fill="#10b981">Crop</tspan></text>
+      </g>
+      <!-- character -->
+      <g class="climber">
+        <!-- resting arm -->
+        <rect x="170" y="112" width="13" height="36" rx="6.5" fill="#f2c39c"/>
+        <!-- body -->
+        <path d="M175 132 Q175 106 210 106 Q245 106 245 132 L245 160 L175 160 Z" fill="#10b981"/>
+        <!-- neck + head -->
+        <rect x="203" y="94" width="14" height="16" rx="4" fill="#f2c39c"/>
+        <circle cx="210" cy="82" r="21" fill="#f7cfa9"/>
+        <path d="M188 82 Q188 58 210 58 Q232 58 232 82 Q232 70 210 70 Q188 70 188 82 Z" fill="#3a2b21"/>
+        <circle cx="202" cy="83" r="2.3" fill="#2a2119"/>
+        <circle cx="218" cy="83" r="2.3" fill="#2a2119"/>
+        <path d="M203 91 Q210 96 217 91" stroke="#2a2119" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <!-- waving arm -->
+        <g class="wave-arm">
+          <rect x="234" y="112" width="13" height="42" rx="6.5" fill="#f7cfa9"/>
+          <circle cx="240.5" cy="156" r="9" fill="#f7cfa9"/>
+        </g>
+      </g>
+      <!-- reception counter (front) -->
+      <g>
+        <rect x="34" y="150" width="352" height="64" rx="12" fill="#0e6b4c"/>
+        <rect x="34" y="150" width="352" height="13" rx="6.5" fill="#0a8f63"/>
+        <rect x="150" y="172" width="120" height="30" rx="6" fill="#0a5a3f" opacity=".55"/>
+      </g>
+    </svg>
+    <span class="counter-hint" data-i18n="waveHint">👋 눌러서 인사받기</span>
+  </div>
+  <div class="footer-text">© 2026 ClimbCrop · <span data-i18n="footerMade">클라이머를 위해 만들었어요</span></div>
+</footer>
+
 <!-- ─────────── Processing modal ─────────── -->
 <div id="modal" class="modal hidden">
   <div class="modal-card glass">
