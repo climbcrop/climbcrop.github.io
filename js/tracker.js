@@ -42,10 +42,17 @@ function poseInfo(lms) {
   } else {
     cx = (minX + maxX) / 2; cy = (minY + maxY) / 2;
   }
+  // Confidence proxy: mean visibility of the core torso landmarks that define the center.
+  // Low on side-on / occluded / hallucinated poses → used to hold rather than jump.
+  const core = [11, 12, 23, 24];
+  let cvis = 0;
+  for (const i of core) cvis += (lms[i].visibility ?? 0);
+  const conf = cvis / core.length;
   return {
     cx, cy,
     h: maxY - minY,
     area: (maxX - minX) * (maxY - minY),
+    conf,
     lms: lms.map(p => [p.x, p.y, p.visibility ?? 1]),
   };
 }
@@ -198,6 +205,7 @@ export class Tracker {
     const samples = [];
     let prev = null, prevT = null, vx = 0, vy = 0, refH = 0;
     const MAX_V = 1.5, GRACE = 0.35;
+    const MIN_CONF = 0.5;        // below this a detection is too unreliable to move the crop
     let detected = 0;
     for (const { t, cands } of raw) {
       let det;
@@ -210,6 +218,10 @@ export class Tracker {
         det = dt <= GRACE
           ? pickPose(cands, anchor, 0.16 + 0.5 * dt)          // strict while briefly occluded
           : reacquire(cands, anchor, refH, dt);               // global re-acquire when lost
+        // Confidence + scale gate: a low-confidence pose (side-on/occluded) or one whose size
+        // is way off the tracked climber is a likely mis-detection — drop it and let the frame
+        // interpolate (i.e. hold the last good position, then ease to the next good one).
+        if (det && (det.conf < MIN_CONF || (refH && Math.abs(det.h - refH) / refH > 0.55))) det = null;
       }
       if (det) {
         if (prev && t > prevT) {
@@ -249,10 +261,12 @@ function reacquire(cands, anchor, refH, dt) {
     if (d > radius) continue;
     const posScore = 1 - d / radius;
     const scaleScore = refH ? 1 - Math.min(1, Math.abs(c.h - refH) / refH) : 0.5;
-    const score = 0.45 * posScore + 0.55 * scaleScore;
+    const score = 0.4 * posScore + 0.4 * scaleScore + 0.2 * (c.conf ?? 0);
     if (score > bestScore) { bestScore = score; best = c; }
   }
-  if (best && refH && Math.abs(best.h - refH) / refH > 0.6) return null; // too different in size
+  if (!best) return null;
+  if (refH && Math.abs(best.h - refH) / refH > 0.6) return null;   // too different in size
+  if ((best.conf ?? 0) < 0.4) return null;                          // too unreliable to re-lock
   return best;
 }
 
