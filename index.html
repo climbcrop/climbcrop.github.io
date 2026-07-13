@@ -133,7 +133,7 @@
 
         <div class="field">
           <label><span data-i18n="smoothness">움직임 부드러움</span> <output id="smoothVal"></output></label>
-          <input type="range" id="smoothSlider" min="0" max="100" value="60">
+          <input type="range" id="smoothSlider" min="0" max="100" value="0">
           <div class="range-hints"><span data-i18n="smoothLow">다이나믹</span><span data-i18n="smoothHigh">부드럽게</span></div>
         </div>
 
@@ -156,9 +156,9 @@
         <div class="field">
           <label data-i18n="skeleton">스켈레톤 오버레이</label>
           <div class="segmented" id="skelSeg">
-            <button data-skel="off" class="active" data-i18n="skelOff">끄기</button>
+            <button data-skel="off" data-i18n="skelOff">끄기</button>
             <button data-skel="intro" data-i18n="skelIntro">시작만</button>
-            <button data-skel="always" data-i18n="skelAlways">항상</button>
+            <button data-skel="always" class="active" data-i18n="skelAlways">항상</button>
           </div>
         </div>
 

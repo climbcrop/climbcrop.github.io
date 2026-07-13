@@ -36,7 +36,7 @@ const GYMS = [
 const state = {
   fileUrl: null, dur: 0, vw: 0, vh: 0,
   trimStart: 0, trimEnd: 0, climbStart: 0, zoomDur: 2.5,
-  arKey: '54', zoom: 0.55, smooth: 0.6, skel: 'off',
+  arKey: '54', zoom: 0.55, smooth: 0, skel: 'always',
   segments: [],           // {start, end, speed}
   manualAnchors: [],      // {t, dx, dy} manual framing corrections (normalized offsets)
   samples: null, path: null, seed: null,
@@ -543,11 +543,9 @@ $('#analyzeBtn').addEventListener('click', async () => {
     setIndeterminate(false);
     $('#modalTitle').textContent = t('analyzing');
     modalT0 = performance.now();
-    // Heavy model is slower per frame; scan a bit slower so it still catches ~every frame.
-    const scanRate = state.quality === 'accurate' ? 0.7 : 1;
     const { samples, rate, fps } = await tracker.analyze(video, {
       start: state.trimStart, end: state.trimEnd, seed: state.seed,
-      scanRate, onProgress: setProgress, signal: abortCtl.signal,
+      scanRate: 1, onProgress: setProgress, signal: abortCtl.signal,
     });
     hideModal();
     if (!samples) {

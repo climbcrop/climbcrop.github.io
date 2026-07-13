@@ -213,51 +213,31 @@ export class Tracker {
 
     if (raw.length < 2) return { samples: null, rate: 0 };
 
-    // ── Subject tracking over the collected frames ──
-    // The main subject is committed on the FIRST frame (seed if the user tapped one,
-    // else the largest person). Two-tier association keeps the lock robust:
-    //  • LOCKED (recent hit): accept only a candidate near the predicted position, so a
-    //    brief occlusion by another climber can't steal the identity.
-    //  • LOST (missed for > grace): read ALL skeletons in the frame globally and re-acquire
-    //    the best match by scale-similarity + proximity, radius growing with time lost — so
-    //    losing track for a moment never kills tracking for the rest of the clip.
+    // ── Subject tracking — STRIPPED to the bare minimum (debugging) ──
+    // No gates, no confidence/scale rejection, no velocity prediction, no re-acquire.
+    //  • First frame: the seed the user tapped, else the LARGEST person (a climber's skeleton
+    //    is far bigger than stray wall/hold detections).
+    //  • Every other frame: just the NEAREST detection to the previous one — always taken, so
+    //    the tracker can never get "stuck" holding a stale position.
+    // The crop path is left raw (no smoothing) so we can see exactly what is detected.
     const samples = [];
-    let prev = null, prevT = null, vx = 0, vy = 0, refH = 0;
-    const MAX_V = 1.5, GRACE = 0.35;
-    let detected = 0;
+    let prev = null, detected = 0;
     for (const { t, cands } of raw) {
-      let det;
+      let det = null;
+      if (!cands.length) { samples.push({ t, det: null }); continue; }
       if (!prev) {
-        // Initial lock: nearest to the seed the user tapped; otherwise, when several people
-        // are in frame, follow the one closest to the horizontal centre (fixed-camera clips
-        // frame the climber near the middle).
-        det = (seed && pickPose(cands, seed, 0.5)) || pickCentered(cands);
+        det = seed
+          ? cands.slice().sort((a, b) => (Math.hypot(a.cx - seed.cx, a.cy - seed.cy)) - (Math.hypot(b.cx - seed.cx, b.cy - seed.cy)))[0]
+          : cands.slice().sort((a, b) => b.area - a.area)[0];
       } else {
-        const dt = t - prevT;
-        const anchor = { cx: prev.cx + vx * dt, cy: prev.cy + vy * dt };
-        det = dt <= GRACE
-          ? pickPose(cands, anchor, 0.16 + 0.5 * dt)          // strict while briefly occluded
-          : reacquire(cands, anchor, refH, dt);               // global re-acquire when lost
-        // Scale gate only. A detection near the predicted position is almost certainly the
-        // subject even if some landmarks are occluded (side-on) — trust its position and keep
-        // following, instead of rejecting on low confidence (which made the crop stop tracking
-        // through side-on climbs). Drop it only if the body size is wildly off (different
-        // person / bad fit); the prediction window already blocks big positional jumps.
-        if (det && refH && Math.abs(det.h - refH) / refH > 0.8) det = null;
-      }
-      if (det) {
-        if (prev && t > prevT) {
-          const dt = t - prevT;
-          const jump = Math.hypot(det.cx - prev.cx, det.cy - prev.cy);
-          if (jump > 0.3) { vx = 0; vy = 0; }                 // re-acquire teleport: don't fling
-          else { vx = clampV((det.cx - prev.cx) / dt, MAX_V); vy = clampV((det.cy - prev.cy) / dt, MAX_V); }
+        let best = null, bestD = Infinity;
+        for (const c of cands) {
+          const d = Math.hypot(c.cx - prev.cx, c.cy - prev.cy);
+          if (d < bestD) { bestD = d; best = c; }
         }
-        prev = det; prevT = t;
-        refH = refH ? refH * 0.8 + det.h * 0.2 : det.h;       // running reference scale
-        detected++;
-      } else {
-        vx *= 0.6; vy *= 0.6;
+        det = best;
       }
+      if (det) { prev = det; detected++; }
       samples.push({ t, det });
     }
 
@@ -328,11 +308,14 @@ export function buildPath(samples, { vw, vh, ar, zoom, smooth, fps }) {
   const cropW = cropH * ar; // ≤ fullW ≤ vw by construction — the box can never leave the frame
 
   const times = samples.map(s => s.t);
-  const windowSec = 0.4 + smooth * 3.2;
-  const radius = Math.max(1, Math.round(windowSec * fps / 2));
-  const cxs = boxBlur(samples.map(s => s.det.cx * vw), radius);
+  // smooth = 0 → radius 0 → NO smoothing (raw per-frame centres). Higher = wider box blur.
+  const windowSec = smooth * 3.6;
+  const radius = Math.round(windowSec * fps / 2);
+  const rawCx = samples.map(s => s.det.cx * vw);
   // Bias slightly above the torso center to leave headroom for the climber
-  const cys = boxBlur(samples.map(s => (s.det.cy - s.det.h * 0.06) * vh), radius);
+  const rawCy = samples.map(s => (s.det.cy - s.det.h * 0.06) * vh);
+  const cxs = radius > 0 ? boxBlur(rawCx, radius) : rawCx;
+  const cys = radius > 0 ? boxBlur(rawCy, radius) : rawCy;
 
   function indexAt(t) {
     if (t <= times[0]) return [0, 0, 0];
