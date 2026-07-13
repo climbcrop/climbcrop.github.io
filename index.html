@@ -107,6 +107,16 @@
         <h2 data-i18n="settings">설정</h2>
 
         <div class="field">
+          <label data-i18n="quality">추적 정확도</label>
+          <div class="segmented" id="qualitySeg">
+            <button data-q="fast" data-i18n="qFast">빠름</button>
+            <button data-q="balanced" data-i18n="qBalanced">균형</button>
+            <button data-q="accurate" class="active" data-i18n="qAccurate">정확</button>
+          </div>
+          <p class="hint" data-i18n="qualityHint">정확할수록 옆모습·특이 자세를 잘 잡지만 모델이 더 크고 느려요.</p>
+        </div>
+
+        <div class="field">
           <label data-i18n="aspect">화면비</label>
           <div class="segmented" id="aspectSeg">
             <button data-ar="916">9:16</button>

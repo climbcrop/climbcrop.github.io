@@ -41,6 +41,7 @@ const state = {
   samples: null, path: null, seed: null,
   view: 'full', playing: false, analyzed: false,
   result: null,
+  quality: 'accurate',    // pose model tier: fast | balanced | accurate
   watermark: { difficulty: null, gym: null }, // logo always on; gym: {type:'image',img,name}
 };
 
@@ -512,13 +513,17 @@ $('#analyzeBtn').addEventListener('click', async () => {
   pause();
   abortCtl = new AbortController();
   showModal('loadingModel');
+  setIndeterminate(true);   // model download has no progress; don't look frozen
   try {
-    await tracker.init();
+    await tracker.init(state.quality);
+    setIndeterminate(false);
     $('#modalTitle').textContent = t('analyzing');
     modalT0 = performance.now();
+    // Heavy model is slower per frame; scan a bit slower so it still catches ~every frame.
+    const scanRate = state.quality === 'accurate' ? 0.7 : 1;
     const { samples, rate, fps } = await tracker.analyze(video, {
-      start: state.trimStart, end: state.trimEnd, fps: ANALYZE_FPS,
-      seed: state.seed, onProgress: setProgress, signal: abortCtl.signal,
+      start: state.trimStart, end: state.trimEnd, seed: state.seed,
+      scanRate, onProgress: setProgress, signal: abortCtl.signal,
     });
     hideModal();
     if (!samples) {
@@ -641,6 +646,13 @@ $('#aspectSeg').addEventListener('click', e => {
   rebuildPath();
   fitPreviewCanvas();
   drawPreview();
+});
+$('#qualitySeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.q === state.quality) return;
+  state.quality = b.dataset.q;
+  $('#qualitySeg').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+  if (state.analyzed) toast(t('reanalyze'));
 });
 $('#skelSeg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;

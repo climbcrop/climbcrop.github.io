@@ -2,7 +2,13 @@
 // MediaPipe is loaded lazily at analyze time so a CDN/adblock failure can't break the app UI.
 const MEDIAPIPE_ESM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm';
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
-const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+// Accuracy tiers. lite is fast but mislabels side-on / unusual climbing poses; heavy is far
+// more robust (at a bigger download + slower inference). Default to heavy for quality.
+const MODELS = {
+  fast:     'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+  balanced: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
+  accurate: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
+};
 
 // Main skeleton bones (MediaPipe 33-landmark topology)
 export const BONES = [
@@ -111,34 +117,37 @@ function fillGaps(samples) {
 }
 
 export class Tracker {
-  constructor() { this.landmarker = null; }
+  constructor() { this.landmarker = null; this.modelKey = null; this._mp = null; this._fileset = null; }
 
-  async init(onStatus) {
-    if (this.landmarker) return;
+  async init(modelKey = 'accurate', onStatus) {
+    if (this.landmarker && this.modelKey === modelKey) return;
     onStatus?.('loadingModel');
-    let FilesetResolver, PoseLandmarker;
-    try {
-      ({ FilesetResolver, PoseLandmarker } = await import(MEDIAPIPE_ESM));
-    } catch {
-      throw new Error('AI 모델 라이브러리를 불러오지 못했어요. 인터넷 연결 또는 광고차단기를 확인해 주세요. (Failed to load MediaPipe from CDN)');
+    if (!this._mp) {
+      try { this._mp = await import(MEDIAPIPE_ESM); }
+      catch {
+        throw new Error('AI 모델 라이브러리를 불러오지 못했어요. 인터넷 연결 또는 광고차단기를 확인해 주세요. (Failed to load MediaPipe from CDN)');
+      }
     }
-    const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+    const { FilesetResolver, PoseLandmarker } = this._mp;
+    if (!this._fileset) this._fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+    if (this.landmarker) { try { this.landmarker.close(); } catch { /* ignore */ } this.landmarker = null; }
     // IMAGE mode: each seeked frame is detected independently — no internal video
     // tracker to drift/stall when we jump around the timeline. We do our own
     // cross-frame subject tracking below.
     const opts = {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+      baseOptions: { modelAssetPath: MODELS[modelKey] || MODELS.balanced, delegate: 'GPU' },
       runningMode: 'IMAGE',
       numPoses: 5,
       minPoseDetectionConfidence: 0.35,
       minPosePresenceConfidence: 0.35,
     };
     try {
-      this.landmarker = await PoseLandmarker.createFromOptions(fileset, opts);
+      this.landmarker = await PoseLandmarker.createFromOptions(this._fileset, opts);
     } catch {
       opts.baseOptions.delegate = 'CPU';
-      this.landmarker = await PoseLandmarker.createFromOptions(fileset, opts);
+      this.landmarker = await PoseLandmarker.createFromOptions(this._fileset, opts);
     }
+    this.modelKey = modelKey;
   }
 
   /**
