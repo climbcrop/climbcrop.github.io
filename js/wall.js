@@ -61,20 +61,39 @@
   decorate(document.getElementById('wallMain'), { volumes: 3, routes: 3, scatter: 26 });
   decorate(document.getElementById('wallSide'), { volumes: 1, routes: 1, scatter: 10 });
 
-  // Footer character: waves briefly on load, every few seconds, and on click.
+  // Footer: both characters wave (on load, periodically, and on click); the chalk bag
+  // wiggles and puffs white chalk when tapped.
   (function () {
     var scene = document.getElementById('counterScene');
     if (!scene) return;
-    var arm = scene.querySelector('.wave-arm');
-    if (!arm) return;
+    var arms = scene.querySelectorAll('.wave-a, .wave-b');
     function wave() {
-      arm.classList.remove('waving');
-      void arm.getBoundingClientRect();   // reflow so the animation restarts
-      arm.classList.add('waving');
+      arms.forEach(function (a) {
+        a.classList.remove('waving');
+        void a.getBoundingClientRect();   // reflow so the animation restarts
+        a.classList.add('waving');
+      });
     }
-    arm.addEventListener('animationend', function () { arm.classList.remove('waving'); });
+    arms.forEach(function (a) {
+      a.addEventListener('animationend', function () { a.classList.remove('waving'); });
+    });
     scene.addEventListener('click', wave);
     scene.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); wave(); } });
+
+    var chalk = document.getElementById('chalkBag');
+    if (chalk) {
+      var chalkBusy = false;
+      function puff(e) {
+        if (e) e.stopPropagation();        // chalk click shouldn't also wave
+        if (chalkBusy) return;
+        chalkBusy = true;
+        chalk.classList.add('shaking', 'puffing');
+        setTimeout(function () { chalk.classList.remove('shaking', 'puffing'); chalkBusy = false; }, 850);
+      }
+      chalk.addEventListener('click', puff);
+      chalk.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); puff(e); } });
+    }
+
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
       setTimeout(wave, 1200);
       setInterval(wave, 6500);
