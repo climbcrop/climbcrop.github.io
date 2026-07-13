@@ -194,6 +194,9 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 @keyframes indet{0%{margin-left:-40%}100%{margin-left:100%}}
 .progress-meta{display:flex;justify-content:space-between;font-size:.78rem;color:var(--ink-dim)}
 #progressPct{color:var(--accent);font-weight:800;font-variant-numeric:tabular-nums}
+.export-live-canvas{width:100%;max-height:34vh;object-fit:contain;border-radius:12px;background:#000}
+/* off-DOM <video> mounted tiny during export so mobile keeps it playing */
+.export-live{position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:-1}
 .ad-slot{min-height:120px;display:grid;place-items:center;border:1px dashed rgba(255,255,255,.2);border-radius:12px;background:rgba(255,255,255,.03)}
 .ad-ph{color:var(--ink-dim);font-size:.8rem;letter-spacing:.2em}
 
