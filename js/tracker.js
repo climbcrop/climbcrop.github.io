@@ -189,32 +189,40 @@ export class Tracker {
 
     // ── Subject tracking over the collected frames ──
     // The main subject is committed on the FIRST frame (seed if the user tapped one,
-    // else the largest person) and never re-decided. Prediction + a modest re-acquire
-    // window keep the lock on that same climber; longer misses are interpolated rather
-    // than grabbed from another person.
+    // else the largest person). Two-tier association keeps the lock robust:
+    //  • LOCKED (recent hit): accept only a candidate near the predicted position, so a
+    //    brief occlusion by another climber can't steal the identity.
+    //  • LOST (missed for > grace): read ALL skeletons in the frame globally and re-acquire
+    //    the best match by scale-similarity + proximity, radius growing with time lost — so
+    //    losing track for a moment never kills tracking for the rest of the clip.
     const samples = [];
-    let prev = null, prevT = null, vx = 0, vy = 0;
-    const MAX_V = 1.5;
+    let prev = null, prevT = null, vx = 0, vy = 0, refH = 0;
+    const MAX_V = 1.5, GRACE = 0.35;
     let detected = 0;
     for (const { t, cands } of raw) {
-      let anchor = null, maxJump = 0.42;
-      if (prev) {
+      let det;
+      if (!prev) {
+        // Initial lock: nearest to the seed, else the biggest person in frame.
+        det = (seed && pickPose(cands, seed, 0.5)) || pickPose(cands, null, Infinity);
+      } else {
         const dt = t - prevT;
-        anchor = { cx: prev.cx + vx * dt, cy: prev.cy + vy * dt };
-        maxJump = Math.min(0.34, 0.16 + 0.22 * dt);  // stay on the first-frame subject
-      } else if (seed) {
-        anchor = seed;
+        const anchor = { cx: prev.cx + vx * dt, cy: prev.cy + vy * dt };
+        det = dt <= GRACE
+          ? pickPose(cands, anchor, 0.16 + 0.5 * dt)          // strict while briefly occluded
+          : reacquire(cands, anchor, refH, dt);               // global re-acquire when lost
       }
-      const det = pickPose(cands, anchor, maxJump);
       if (det) {
         if (prev && t > prevT) {
           const dt = t - prevT;
-          vx = clampV((det.cx - prev.cx) / dt, MAX_V);
-          vy = clampV((det.cy - prev.cy) / dt, MAX_V);
+          const jump = Math.hypot(det.cx - prev.cx, det.cy - prev.cy);
+          if (jump > 0.3) { vx = 0; vy = 0; }                 // re-acquire teleport: don't fling
+          else { vx = clampV((det.cx - prev.cx) / dt, MAX_V); vy = clampV((det.cy - prev.cy) / dt, MAX_V); }
         }
-        prev = det; prevT = t; detected++;
+        prev = det; prevT = t;
+        refH = refH ? refH * 0.8 + det.h * 0.2 : det.h;       // running reference scale
+        detected++;
       } else {
-        vx *= 0.7; vy *= 0.7;
+        vx *= 0.6; vy *= 0.6;
       }
       samples.push({ t, det });
     }
@@ -227,6 +235,26 @@ export class Tracker {
 }
 
 function clampV(v, m) { return Math.max(-m, Math.min(m, v)); }
+
+// Re-acquire the lost subject by scanning every skeleton in the frame. Score each candidate
+// by proximity to the predicted position (radius grows the longer we've been lost) and by
+// similarity to the subject's learned scale; reject candidates of a very different size so we
+// don't lock onto a clearly different person.
+function reacquire(cands, anchor, refH, dt) {
+  if (!cands.length) return null;
+  const radius = Math.min(1.2, 0.3 + 0.4 * dt);   // widen search the longer we're lost
+  let best = null, bestScore = -Infinity;
+  for (const c of cands) {
+    const d = Math.hypot(c.cx - anchor.cx, c.cy - anchor.cy);
+    if (d > radius) continue;
+    const posScore = 1 - d / radius;
+    const scaleScore = refH ? 1 - Math.min(1, Math.abs(c.h - refH) / refH) : 0.5;
+    const score = 0.45 * posScore + 0.55 * scaleScore;
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  if (best && refH && Math.abs(best.h - refH) / refH > 0.6) return null; // too different in size
+  return best;
+}
 
 // ─────────── Crop path (smoothed, clamped, aspect-locked) ───────────
 function boxBlur(arr, radius, passes = 3) {
