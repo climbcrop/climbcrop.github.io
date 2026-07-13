@@ -71,6 +71,16 @@ function pickPose(cands, anchor, maxJump) {
   return bestD <= maxJump ? best : null;
 }
 
+// Multiple people, no seed: follow whoever is nearest the horizontal centre of the frame.
+function pickCentered(cands) {
+  let best = null, bestD = Infinity;
+  for (const c of cands) {
+    const d = Math.abs(c.cx - 0.5);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
 // Fill missed frames by interpolating between the nearest detections (never lose the subject).
 function fillGaps(samples) {
   const idx = samples.map((s, i) => s.det ? i : -1).filter(i => i >= 0);
@@ -210,8 +220,10 @@ export class Tracker {
     for (const { t, cands } of raw) {
       let det;
       if (!prev) {
-        // Initial lock: nearest to the seed, else the biggest person in frame.
-        det = (seed && pickPose(cands, seed, 0.5)) || pickPose(cands, null, Infinity);
+        // Initial lock: nearest to the seed the user tapped; otherwise, when several people
+        // are in frame, follow the one closest to the horizontal centre (fixed-camera clips
+        // frame the climber near the middle).
+        det = (seed && pickPose(cands, seed, 0.5)) || pickCentered(cands);
       } else {
         const dt = t - prevT;
         const anchor = { cx: prev.cx + vx * dt, cy: prev.cy + vy * dt };

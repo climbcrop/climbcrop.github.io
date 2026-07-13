@@ -18,6 +18,29 @@ const ASPECTS = {
 };
 const ANALYZE_FPS = 8;
 
+// Difficulty tape/hold colours in the common Korean-gym order (easy → hard).
+const GRADES = [
+  { key: 'white',  color: '#f8fafc' }, { key: 'yellow', color: '#facc15' },
+  { key: 'orange', color: '#f97316' }, { key: 'green',  color: '#22c55e' },
+  { key: 'blue',   color: '#3b82f6' }, { key: 'red',    color: '#ef4444' },
+  { key: 'purple', color: '#a855f7' }, { key: 'gray',   color: '#9ca3af' },
+  { key: 'brown',  color: '#92400e' }, { key: 'black',  color: '#111827' },
+  { key: 'pink',   color: '#f9a8d4' }, { key: 'navy',   color: '#1e3a8a' },
+];
+// Quick-pick gym text badges (Seoul/Daejeon). Editable; users can also upload their own logo.
+const SAMPLE_GYMS = [
+  { name: '더클라임', color: '#e11d48' },
+  { name: '서울숲클라이밍', color: '#0ea5e9' },
+  { name: '손상원클라이밍', color: '#f59e0b' },
+  { name: '볼더프렌즈', color: '#8b5cf6' },
+  { name: '피커스', color: '#10b981' },
+  { name: '클라이밍파크', color: '#3b82f6' },
+  { name: '알레클라이밍', color: '#ef4444' },
+  { name: '볼더프로젝트', color: '#14b8a6' },
+  { name: '실크로드', color: '#f97316' },
+  { name: '오르다클라이밍', color: '#a855f7' },
+];
+
 const state = {
   fileUrl: null, dur: 0, vw: 0, vh: 0,
   trimStart: 0, trimEnd: 0, climbStart: 0, zoomDur: 2.5,
@@ -26,6 +49,7 @@ const state = {
   samples: null, path: null, seed: null,
   view: 'full', playing: false, analyzed: false,
   result: null,
+  watermark: { showLogo: true, difficulty: null, gym: null }, // gym: {type:'text',name,color} | {type:'image',img}
 };
 
 // ─────────── Video element + audio graph ───────────
@@ -145,6 +169,7 @@ function renderFrame(c, cw, ch, tSec, forExport = false) {
       nx => (nx * state.vw - box.x) * sX,
       ny => (ny * state.vh - box.y) * (ch / box.h),
       sX * (state.vw / 1000));
+    drawWatermark(c, cw, ch);
   } else {
     c.drawImage(video, 0, 0, cw, ch);
     const sx = cw / state.vw, sy = ch / state.vh;
@@ -172,6 +197,88 @@ function renderFrame(c, cw, ch, tSec, forExport = false) {
       c.restore();
     }
   }
+}
+
+// Rounded rect helper.
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+// Bottom-right branding overlay: [gym logo] [difficulty dot] [ClimbCrop wordmark].
+// Sizes are relative to the canvas height, so it scales across preview and 1080p export.
+function drawWatermark(c, cw, ch) {
+  const wm = state.watermark;
+  if (!wm.showLogo && !wm.difficulty && !wm.gym) return;
+  const pad = Math.round(ch * 0.03);
+  const h = Math.max(18, Math.round(ch * 0.052));
+  const gap = Math.round(h * 0.34);
+  const yMid = ch - pad - h / 2;
+  let x = cw - pad;
+  c.save();
+  c.textBaseline = 'middle';
+  c.shadowColor = 'rgba(0,0,0,.5)';
+  c.shadowBlur = h * 0.18;
+
+  if (wm.showLogo) {
+    const fs = Math.round(h * 0.6);
+    const markFs = Math.round(fs * 1.15);
+    c.font = `800 ${fs}px "Pretendard Variable", system-ui, sans-serif`;
+    const climbW = c.measureText('Climb').width;
+    const cropW = c.measureText('Crop').width;
+    const markW = markFs * 1.05;
+    const boxW = h * 0.32 + markW + climbW + cropW + h * 0.34;
+    c.fillStyle = 'rgba(12,16,28,.5)';
+    roundRect(c, x - boxW, yMid - h / 2, boxW, h, h / 2); c.fill();
+    c.shadowBlur = 0;
+    c.textAlign = 'left';
+    let tx = x - boxW + h * 0.28;
+    c.font = `${markFs}px system-ui, "Segoe UI Emoji"`;
+    c.fillStyle = '#fff';
+    c.fillText('🧗', tx, yMid + 1); tx += markW;
+    c.font = `800 ${fs}px "Pretendard Variable", system-ui, sans-serif`;
+    c.fillStyle = '#fff'; c.fillText('Climb', tx, yMid); tx += climbW;
+    c.fillStyle = '#34d399'; c.fillText('Crop', tx, yMid);
+    x -= boxW + gap;
+    c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = h * 0.18;
+  }
+
+  if (wm.difficulty) {
+    const r = h * 0.44;
+    c.beginPath(); c.arc(x - r, yMid, r, 0, Math.PI * 2);
+    c.fillStyle = wm.difficulty; c.fill();
+    c.shadowBlur = 0;
+    c.lineWidth = Math.max(1.5, r * 0.16); c.strokeStyle = 'rgba(255,255,255,.9)'; c.stroke();
+    x -= r * 2 + gap;
+    c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = h * 0.18;
+  }
+
+  if (wm.gym) {
+    if (wm.gym.type === 'image' && wm.gym.img && wm.gym.img.complete) {
+      const ratio = wm.gym.img.naturalWidth / (wm.gym.img.naturalHeight || 1);
+      const w = Math.max(h, Math.min(h * 2.4, h * ratio));
+      c.shadowBlur = h * 0.18;
+      c.drawImage(wm.gym.img, x - w, yMid - h / 2, w, h);
+      x -= w + gap;
+    } else if (wm.gym.type === 'text') {
+      const fs = Math.round(h * 0.5);
+      c.font = `700 ${fs}px "Pretendard Variable", system-ui, sans-serif`;
+      const tw = c.measureText(wm.gym.name).width;
+      const boxW = tw + h * 0.62;
+      c.fillStyle = wm.gym.color || 'rgba(12,16,28,.6)';
+      roundRect(c, x - boxW, yMid - h / 2, boxW, h, h / 2); c.fill();
+      c.shadowBlur = 0;
+      c.fillStyle = '#fff'; c.textAlign = 'left';
+      c.fillText(wm.gym.name, x - boxW + h * 0.31, yMid);
+      x -= boxW + gap;
+    }
+  }
+  c.restore();
 }
 
 function fitPreviewCanvas() {
@@ -562,6 +669,62 @@ $('#skelSeg').addEventListener('click', e => {
   drawPreview();
 });
 
+// ─────────── Watermark / branding controls ───────────
+function setupWatermarkUI() {
+  $('#wmLogo').addEventListener('change', e => { state.watermark.showLogo = e.target.checked; drawPreview(); });
+
+  const dots = $('#gradeDots');
+  GRADES.forEach(g => {
+    const d = document.createElement('button');
+    d.className = 'grade-dot';
+    d.style.background = g.color;
+    d.dataset.color = g.color;
+    d.title = g.key;
+    d.addEventListener('click', () => {
+      state.watermark.difficulty = state.watermark.difficulty === g.color ? null : g.color;
+      refreshGradeDots();
+      drawPreview();
+    });
+    dots.appendChild(d);
+  });
+
+  const chips = $('#gymChips');
+  SAMPLE_GYMS.forEach(gym => {
+    const b = document.createElement('button');
+    b.className = 'gym-chip';
+    b.textContent = gym.name;
+    b.style.setProperty('--gym', gym.color);
+    b.addEventListener('click', () => {
+      const on = state.watermark.gym?.type === 'text' && state.watermark.gym.name === gym.name;
+      state.watermark.gym = on ? null : { type: 'text', name: gym.name, color: gym.color };
+      refreshGymChips();
+      drawPreview();
+    });
+    chips.appendChild(b);
+  });
+
+  $('#gymUploadBtn').addEventListener('click', () => $('#gymFile').click());
+  $('#gymFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => { state.watermark.gym = { type: 'image', img, name: '' }; refreshGymChips(); drawPreview(); };
+    img.onerror = () => toast(t('gymLoadFail'));
+    img.src = URL.createObjectURL(file);
+    e.target.value = '';
+  });
+}
+function refreshGradeDots() {
+  document.querySelectorAll('#gradeDots .grade-dot').forEach(d =>
+    d.classList.toggle('active', d.dataset.color === state.watermark.difficulty));
+}
+function refreshGymChips() {
+  const g = state.watermark.gym;
+  document.querySelectorAll('#gymChips .gym-chip').forEach(c =>
+    c.classList.toggle('active', g?.type === 'text' && g.name === c.textContent));
+  $('#gymUploadBtn').classList.toggle('active', g?.type === 'image');
+}
+
 const zoomSlider = $('#zoomSlider'), smoothSlider = $('#smoothSlider'), zoomDurSlider = $('#zoomDurSlider');
 function syncSliderLabels() {
   $('#zoomVal').textContent = `${zoomSlider.value}%`;
@@ -663,5 +826,6 @@ window.addEventListener('resize', () => { if (!$('#screen-editor').classList.con
 
 initI18n();
 syncSliderLabels();
+setupWatermarkUI();
 showScreen('upload');
 window.__ccAppReady = true; // signals the inline watchdog that module JS is alive

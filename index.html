@@ -153,6 +153,22 @@
           <p class="hint" data-i18n="speedHint">오디오 피치는 유지된 채 속도만 변합니다.</p>
         </div>
 
+        <div class="field boxed">
+          <label data-i18n="branding">브랜딩 워터마크 (오른쪽 아래)</label>
+          <label class="toggle-row">
+            <span data-i18n="showLogo">ClimbCrop 로고</span>
+            <input type="checkbox" id="wmLogo" checked>
+          </label>
+          <label class="sub-label" data-i18n="difficulty">난이도 색</label>
+          <div id="gradeDots" class="grade-dots"></div>
+          <label class="sub-label" data-i18n="gymLogo">암장 로고 (선택)</label>
+          <div id="gymChips" class="gym-chips"></div>
+          <div class="row" style="margin-top:8px">
+            <button id="gymUploadBtn" class="mini-btn">⬆ <span data-i18n="gymUpload">내 로고 업로드</span></button>
+            <input type="file" id="gymFile" accept="image/*" hidden>
+          </div>
+        </div>
+
         <div class="actions">
           <button id="analyzeBtn" class="btn primary">🎯 <span data-i18n="analyze">클라이머 분석</span></button>
           <button id="exportBtn" class="btn accent" disabled>🎬 <span data-i18n="export">영상 내보내기</span></button>
