@@ -38,9 +38,8 @@ const state = {
   trimStart: 0, trimEnd: 0, climbStart: 0, zoomDur: 2.5,
   arKey: '54', zoom: 0.55, smooth: 0.6, skel: 'off',
   segments: [],           // {start, end, speed}
-  manualAnchors: [],      // {t, dx, dy} manual framing corrections (normalized offsets)
-  seeds: [],              // {t, cx, cy} manual subject picks (keyframes)
-  frames: null,           // cached per-frame detections from the scan (re-tracked on seed change)
+  boxKeys: [],            // {t, cx, cy} manual crop-box positions (keyframes, normalized centre)
+  frames: null,           // cached per-frame detections from the scan
   samples: null, path: null,
   view: 'full', playing: false, analyzed: false,
   result: null,
@@ -96,52 +95,48 @@ function rebuildPath() {
   });
 }
 
-function seedNear(tSec) {
-  let best = null, bd = 0.25;
-  for (const s of state.seeds) { const d = Math.abs(s.t - tSec); if (d < bd) { bd = d; best = s; } }
-  return best;
+// Manual box keyframes: each is an absolute crop centre {t, cx, cy} the user placed by dragging
+// the crop box. Returns the interpolated manual centre + a weight (1 at/between keys, fading to 0
+// away from them so auto-tracking takes back over). null when there are no keyframes.
+function manualCenter(tSec) {
+  const K = state.boxKeys;
+  if (!K.length) return null;
+  const W = 1.5;
+  let left = null, right = null;
+  for (const k of K) {
+    if (k.t <= tSec && (!left || k.t > left.t)) left = k;
+    if (k.t > tSec && (!right || k.t < right.t)) right = k;
+  }
+  if (left && right && right.t - left.t <= 2 * W) {       // sustained region between two keys
+    const f = (tSec - left.t) / (right.t - left.t);
+    return { cx: left.cx + (right.cx - left.cx) * f, cy: left.cy + (right.cy - left.cy) * f, w: 1 };
+  }
+  const near = left && right ? (tSec - left.t < right.t - tSec ? left : right) : (left || right);
+  let w = Math.max(0, 1 - Math.abs(near.t - tSec) / W);
+  w = w * w * (3 - 2 * w);                                 // smoothstep falloff
+  return { cx: near.cx, cy: near.cy, w };
 }
 
 function cropAt(tSec) {
   const full = state.path ? state.path.full : fullViewBox();
   if (!state.path) {
-    // pre-analysis preview of the crop size, centered on the seed or frame center
+    // pre-analysis preview of the crop size, centred on a manual box key or the frame centre
     const h = full.h * state.zoom, w = h * arVal();
-    const s = seedNear(tSec);
-    const cx = s ? s.cx * state.vw : state.vw / 2;
-    const cy = s ? s.cy * state.vh : state.vh / 2;
+    const m = manualCenter(tSec);
+    const cx = (m ? m.cx : 0.5) * state.vw;
+    const cy = (m ? m.cy : 0.5) * state.vh;
     return { x: clamp(cx - w / 2, 0, state.vw - w), y: clamp(cy - h / 2, 0, state.vh - h), w, h };
   }
   if (tSec <= state.climbStart) return full;              // full view before the problem starts
-  const [ox, oy] = manualOffsetAt(tSec);
-  const tracked = state.path.trackedBox(tSec, ox, oy);
+  let [cx, cy] = state.path.centerNormAt(tSec);           // auto-tracked centre
+  const m = manualCenter(tSec);
+  if (m) { cx += (m.cx - cx) * m.w; cy += (m.cy - cy) * m.w; }   // blend toward the manual box
+  const tracked = state.path.boxAtCenter(cx, cy);
   if (tSec < state.climbStart + state.zoomDur) {           // gentle ease-in zoom
     const f = smoothstep((tSec - state.climbStart) / state.zoomDur);
     return lerpBox(full, tracked, f);
   }
   return tracked;
-}
-
-// Manual framing corrections: each anchor is a normalized offset {t, dx, dy} the user set by
-// dragging the crop preview. The offset fades to zero away from anchors (so auto-tracking takes
-// over), and interpolates between nearby anchors to sustain a correction across a segment.
-function manualOffsetAt(tSec) {
-  const A = state.manualAnchors;
-  if (!A.length) return [0, 0];
-  const W = 1.2;
-  let left = null, right = null;
-  for (const a of A) {
-    if (a.t <= tSec && (!left || a.t > left.t)) left = a;
-    if (a.t > tSec && (!right || a.t < right.t)) right = a;
-  }
-  if (left && right && right.t - left.t <= 2 * W) {       // sustained region between two anchors
-    const f = (tSec - left.t) / (right.t - left.t);
-    return [left.dx + (right.dx - left.dx) * f, left.dy + (right.dy - left.dy) * f];
-  }
-  const near = left && right ? (tSec - left.t < right.t - tSec ? left : right) : (left || right);
-  let w = Math.max(0, 1 - Math.abs(near.t - tSec) / W);
-  w = w * w * (3 - 2 * w);                                 // smoothstep falloff
-  return [near.dx * w, near.dy * w];
 }
 
 function speedAt(tSec) {
@@ -236,18 +231,6 @@ function renderFrame(c, cw, ch, tSec, forExport = false) {
     if (state.path) {
       drawAllSkeletons(c, tSec, nx => nx * cw, ny => ny * ch, sx * (state.vw / 1000));
       drawSkeleton(c, tSec, nx => nx * cw, ny => ny * ch, sx * (state.vw / 1000));
-    }
-    const seed = seedNear(tSec);
-    if (seed) {
-      c.save();
-      c.strokeStyle = '#fbbf24'; c.lineWidth = 2;
-      c.beginPath();
-      c.arc(seed.cx * cw, seed.cy * ch, 12, 0, Math.PI * 2);
-      c.stroke();
-      c.beginPath();
-      c.arc(seed.cx * cw, seed.cy * ch, 3, 0, Math.PI * 2);
-      c.fillStyle = '#fbbf24'; c.fill();
-      c.restore();
     }
   }
 }
@@ -568,17 +551,6 @@ function toast(msg, ms = 3500) {
   setTimeout(() => el.remove(), ms);
 }
 
-// Re-run subject association over the cached scan (instant — no re-scan). Called after analyze
-// and whenever the user adds/moves/removes a seed keyframe.
-function retrack() {
-  if (!state.frames) return;
-  const { samples } = trackSubject(state.frames, { seeds: state.seeds });
-  if (!samples) return;
-  state.samples = samples;
-  rebuildPath();
-  drawPreview();
-}
-
 // ─────────── Analyze ───────────
 $('#analyzeBtn').addEventListener('click', async () => {
   pause();
@@ -598,11 +570,10 @@ $('#analyzeBtn').addEventListener('click', async () => {
     if (!frames || frames.length < 2) { toast(t('analyzeLow', { p: 0 })); return; }
     state.frames = frames;
     state.sampleFps = fps;
-    const { samples, rate } = trackSubject(frames, { seeds: state.seeds });
+    const { samples, rate } = trackSubject(frames);
     state.samples = samples;
     state.analyzed = true;
-    state.manualAnchors = [];   // fresh path → drop old manual corrections
-    rebuildPath();
+    rebuildPath();   // manual box keyframes are absolute, so they persist across re-analysis
     $('#trackInfo').textContent = t(rate < 0.5 ? 'analyzeLow' : 'analyzeDone');
     $('#exportBtn').disabled = false;
     updateManualUI();
@@ -695,21 +666,16 @@ function setView(v) {
   state.view = v;
   $('#viewFullBtn').classList.toggle('active', v === 'full');
   $('#viewCropBtn').classList.toggle('active', v === 'crop');
-  cv.classList.toggle('pannable', v === 'crop' && state.analyzed);
+  cv.classList.toggle('pannable', state.analyzed);   // drag the box in either view
   fitPreviewCanvas();
   drawPreview();
 }
 $('#viewFullBtn').addEventListener('click', () => setView('full'));
 $('#viewCropBtn').addEventListener('click', () => setView('crop'));
 $('#resetFramingBtn').addEventListener('click', () => {
-  state.manualAnchors = [];
+  state.boxKeys = [];
   updateManualUI();
   drawPreview();
-});
-$('#resetSeedsBtn').addEventListener('click', () => {
-  state.seeds = [];
-  updateSeedUI();
-  if (state.frames) retrack(); else drawPreview();
 });
 $('#playBtn').addEventListener('click', () => state.playing ? pause() : play());
 document.addEventListener('keydown', e => {
@@ -812,78 +778,65 @@ $('#setClimbBtn').addEventListener('click', () => {
   drawPreview();
 });
 
-// Pick the climber at ANY frame (a seed keyframe). Click empty space near an existing seed to
-// remove it. After a scan, seeds re-track instantly (no re-scan); before, they just set the
-// preview centre and take effect on the first analyze.
-cv.addEventListener('click', e => {
-  if (state.view === 'crop' && state.analyzed) return; // crop view is for drag-reframe, not seeding
-  const r = cv.getBoundingClientRect();
-  const cx = (e.clientX - r.left) / r.width, cy = (e.clientY - r.top) / r.height;
-  const tSec = video.currentTime;
-  const existing = state.seeds.find(s => Math.abs(s.t - tSec) < 0.2);
-  if (existing) { existing.cx = cx; existing.cy = cy; }
-  else { state.seeds.push({ t: tSec, cx, cy }); state.seeds.sort((a, b) => a.t - b.t); }
-  updateSeedUI();
-  if (state.frames) retrack(); else drawPreview();
+// Move the crop BOX to place a keyframe at the current frame.
+//  • Original view: tap / drag → the box centre goes where you point (direct placement).
+//  • Crop view: drag → pan the framing (content follows your drag).
+// Keyframes interpolate between each other and fade back to auto-tracking elsewhere.
+let dragKey = null, dragStart = null;
+function keyAt(tSec) {
+  let k = state.boxKeys.find(x => Math.abs(x.t - tSec) < 0.15);
+  if (!k) {
+    const box = cropAt(tSec);
+    k = { t: tSec, cx: (box.x + box.w / 2) / state.vw, cy: (box.y + box.h / 2) / state.vh };
+    state.boxKeys.push(k);
+    state.boxKeys.sort((a, b) => a.t - b.t);
+  }
+  return k;
+}
+cv.addEventListener('pointerdown', e => {
+  if (!(state.analyzed && state.path)) return;
+  if (state.playing) pause();
+  cv.setPointerCapture(e.pointerId);
+  dragKey = keyAt(video.currentTime);
+  dragStart = { x: e.clientX, y: e.clientY, cx: dragKey.cx, cy: dragKey.cy };
+  if (state.view === 'full') setKeyToPointer(e);   // original view: jump box to the tap
+  updateManualUI();
+  drawPreview();
 });
+cv.addEventListener('pointermove', e => {
+  if (!dragKey) return;
+  if (state.view === 'full') {
+    setKeyToPointer(e);
+  } else {
+    const r = cv.getBoundingClientRect();
+    const cropFracX = state.path.cropW / state.vw, cropFracY = state.path.cropH / state.vh;
+    dragKey.cx = clamp(dragStart.cx - ((e.clientX - dragStart.x) / r.width) * cropFracX, 0, 1);
+    dragKey.cy = clamp(dragStart.cy - ((e.clientY - dragStart.y) / r.height) * cropFracY, 0, 1);
+  }
+  drawPreview();
+});
+function setKeyToPointer(e) {
+  const r = cv.getBoundingClientRect();
+  dragKey.cx = clamp((e.clientX - r.left) / r.width, 0, 1);
+  dragKey.cy = clamp((e.clientY - r.top) / r.height, 0, 1);
+}
+function endDrag() { dragKey = null; }
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
 
-function updateSeedUI() {
-  const btn = $('#resetSeedsBtn');
-  if (btn) btn.style.display = state.seeds.length ? '' : 'none';
+function updateManualUI() {
+  const btn = $('#resetFramingBtn');
+  if (btn) btn.style.display = state.boxKeys.length ? '' : 'none';
   const layer = $('#seedLayer');
   if (layer) {
     layer.innerHTML = '';
-    for (const s of state.seeds) {
+    for (const k of state.boxKeys) {
       const d = document.createElement('div');
       d.className = 'tl-seed';
-      d.style.left = `${(s.t / state.dur) * 100}%`;
+      d.style.left = `${(k.t / state.dur) * 100}%`;
       layer.appendChild(d);
     }
   }
-}
-
-// Drag on the crop preview to manually reframe this moment (fixes segments the tracker misses).
-let panAnchor = null, panLast = null, panCreated = false;
-cv.addEventListener('pointerdown', e => {
-  if (!(state.view === 'crop' && state.analyzed && state.path)) return;
-  if (state.playing) pause();
-  cv.setPointerCapture(e.pointerId);
-  const tSec = video.currentTime;
-  panAnchor = state.manualAnchors.find(a => Math.abs(a.t - tSec) < 0.15);
-  if (!panAnchor) {
-    const [dx, dy] = manualOffsetAt(tSec);        // start from the current effective offset
-    panAnchor = { t: tSec, dx, dy };
-    state.manualAnchors.push(panAnchor);
-    state.manualAnchors.sort((a, b) => a.t - b.t);
-    panCreated = true;
-  } else panCreated = false;
-  panLast = { x: e.clientX, y: e.clientY };
-});
-cv.addEventListener('pointermove', e => {
-  if (!panAnchor) return;
-  const r = cv.getBoundingClientRect();
-  const cropFracX = state.path.cropW / state.vw;  // crop width as a fraction of the frame
-  const cropFracY = state.path.cropH / state.vh;
-  panAnchor.dx -= ((e.clientX - panLast.x) / r.width) * cropFracX;  // drag right → reveal left
-  panAnchor.dy -= ((e.clientY - panLast.y) / r.height) * cropFracY;
-  panLast = { x: e.clientX, y: e.clientY };
-  drawPreview();
-});
-function endPan() {
-  if (!panAnchor) return;
-  if (panCreated && Math.abs(panAnchor.dx) + Math.abs(panAnchor.dy) < 0.002) {
-    state.manualAnchors = state.manualAnchors.filter(a => a !== panAnchor); // discard no-op tap
-  }
-  panAnchor = null;
-  updateManualUI();
-}
-cv.addEventListener('pointerup', endPan);
-cv.addEventListener('pointercancel', endPan);
-
-function updateManualUI() {
-  const n = state.manualAnchors.length;
-  const btn = $('#resetFramingBtn');
-  if (btn) btn.style.display = n ? '' : 'none';
 }
 
 // ─────────── Upload / init ───────────
@@ -921,7 +874,7 @@ function initEditor() {
     dur: video.duration, vw: video.videoWidth, vh: video.videoHeight,
     trimStart: 0, trimEnd: video.duration,
     climbStart: Math.min(1.5, video.duration * 0.15),
-    segments: [], manualAnchors: [], seeds: [], frames: null, samples: null, path: null,
+    segments: [], boxKeys: [], frames: null, samples: null, path: null,
     analyzed: false, result: null, view: 'full', playing: false,
   });
   $('#exportBtn').disabled = true;
@@ -930,7 +883,6 @@ function initEditor() {
   setView('full');
   renderSegments();
   updateTimelineUI();
-  updateSeedUI();
   updateManualUI();
   seekTo(video, 0.05).then(() => drawPreview());
   buildThumbnails();

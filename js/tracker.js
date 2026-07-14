@@ -382,15 +382,16 @@ export function buildPath(samples, { vw, vh, ar, zoom, smooth, fps }) {
     return [cxs[a] + (cxs[b] - cxs[a]) * f, cys[a] + (cys[b] - cys[a]) * f];
   }
 
-  // offX/offY are optional manual-correction offsets in normalized frame units (0..1).
-  // The box is still clamped to the frame, so a manual nudge can never push it off-screen.
-  function trackedBox(t, offX = 0, offY = 0) {
+  function trackedBox(t) {
     const [cx, cy] = centerAt(t);
-    return {
-      x: clamp(cx + offX * vw - cropW / 2, 0, vw - cropW),
-      y: clamp(cy + offY * vh - cropH / 2, 0, vh - cropH),
-      w: cropW, h: cropH,
-    };
+    return { x: clamp(cx - cropW / 2, 0, vw - cropW), y: clamp(cy - cropH / 2, 0, vh - cropH), w: cropW, h: cropH };
+  }
+  // Auto-tracked centre in normalized frame units (for blending with manual box keyframes).
+  function centerNormAt(t) { const [cx, cy] = centerAt(t); return [cx / vw, cy / vh]; }
+  // Build the (frame-clamped) crop box from a normalized centre — used for manual box placement.
+  function boxAtCenter(cxN, cyN) {
+    const cx = cxN * vw, cy = cyN * vh;
+    return { x: clamp(cx - cropW / 2, 0, vw - cropW), y: clamp(cy - cropH / 2, 0, vh - cropH), w: cropW, h: cropH };
   }
 
   function lmsAt(t) {
@@ -406,5 +407,5 @@ export function buildPath(samples, { vw, vh, ar, zoom, smooth, fps }) {
     return (f < 0.5 ? samples[a] : samples[b]).all || [];
   }
 
-  return { full, trackedBox, lmsAt, allAt, cropW, cropH };
+  return { full, trackedBox, centerNormAt, boxAtCenter, lmsAt, allAt, cropW, cropH };
 }
