@@ -131,6 +131,9 @@ main{max-width:1180px;margin:0 auto;padding:8px 20px 60px}
 .tl-band.slow{background:#3b82f6}
 .tl-band.fast{background:#f97316}
 .tl-band-label{position:absolute;top:2px;font-size:.66rem;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;padding-left:3px}
+.tl-seed-layer{position:absolute;inset:0;pointer-events:none;z-index:5}
+.tl-seed{position:absolute;top:0;width:2px;height:100%;margin-left:-1px;background:#fbbf24;box-shadow:0 0 6px rgba(251,191,36,.9)}
+.tl-seed::after{content:'';position:absolute;top:-3px;left:-3px;width:8px;height:8px;border-radius:50%;background:#fbbf24}
 .tl-shade{position:absolute;top:0;height:100%;background:rgba(5,8,18,.72);pointer-events:none}
 .tl-shade.left{left:0}
 .tl-shade.right{right:0}

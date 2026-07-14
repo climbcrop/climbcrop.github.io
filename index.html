@@ -90,6 +90,7 @@
         <div class="timeline" id="timeline">
           <canvas class="tl-strip" id="tlStrip"></canvas>
           <div class="tl-band-layer" id="bandLayer"></div>
+          <div class="tl-seed-layer" id="seedLayer"></div>
           <div class="tl-shade left" id="shadeL"></div>
           <div class="tl-shade right" id="shadeR"></div>
           <div class="tl-handle" id="hStart" data-role="start"><i></i></div>
@@ -105,15 +106,6 @@
 
       <aside class="settings glass">
         <h2 data-i18n="settings">설정</h2>
-
-        <div class="field">
-          <label data-i18n="trackMethod">추적 방식</label>
-          <div class="segmented" id="methodSeg">
-            <button data-m="pose" class="active" data-i18n="mPose">포즈(자동)</button>
-            <button data-m="clicktrack" data-i18n="mClick">클릭 추적</button>
-          </div>
-          <p class="hint" data-i18n="methodHint">클릭 추적: 첫 프레임에서 클라이머를 클릭하면 그 사람 외형을 따라갑니다(작거나 옆모습일 때 유리).</p>
-        </div>
 
         <div class="field">
           <label data-i18n="quality">추적 정확도</label>
@@ -142,14 +134,18 @@
 
         <div class="field">
           <label><span data-i18n="smoothness">움직임 부드러움</span> <output id="smoothVal"></output></label>
-          <input type="range" id="smoothSlider" min="0" max="100" value="0">
+          <input type="range" id="smoothSlider" min="0" max="100" value="60">
           <div class="range-hints"><span data-i18n="smoothLow">다이나믹</span><span data-i18n="smoothHigh">부드럽게</span></div>
         </div>
 
-        <div class="field">
+        <div class="field boxed">
           <label data-i18n="manualFix">수동 보정</label>
-          <p class="hint" style="margin-top:0" data-i18n="manualFixHint">크롭 미리보기를 드래그하면 그 구간 프레이밍을 직접 옮길 수 있어요.</p>
-          <button id="resetFramingBtn" class="mini-btn" style="display:none" data-i18n="resetFraming">보정 초기화</button>
+          <p class="hint" style="margin-top:0" data-i18n="seedFixHint">추적이 틀린 지점에서 "원본" 뷰로 클라이머를 클릭하면 그 프레임의 주인공을 직접 지정합니다(즉시 반영). 여러 지점 지정 가능.</p>
+          <p class="hint" data-i18n="manualFixHint">크롭 뷰에서 드래그하면 그 구간 프레이밍을 미세 조정할 수 있어요.</p>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <button id="resetSeedsBtn" class="mini-btn" style="display:none" data-i18n="resetSeeds">주인공 선택 초기화</button>
+            <button id="resetFramingBtn" class="mini-btn" style="display:none" data-i18n="resetFraming">프레이밍 초기화</button>
+          </div>
         </div>
 
         <div class="field boxed">
@@ -165,9 +161,9 @@
         <div class="field">
           <label data-i18n="skeleton">스켈레톤 오버레이</label>
           <div class="segmented" id="skelSeg">
-            <button data-skel="off" data-i18n="skelOff">끄기</button>
+            <button data-skel="off" class="active" data-i18n="skelOff">끄기</button>
             <button data-skel="intro" data-i18n="skelIntro">시작만</button>
-            <button data-skel="always" class="active" data-i18n="skelAlways">항상</button>
+            <button data-skel="always" data-i18n="skelAlways">항상</button>
           </div>
         </div>
 

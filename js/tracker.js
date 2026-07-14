@@ -230,42 +230,74 @@ export class Tracker {
       video.playbackRate = wasRate;
     }
 
-    if (raw.length < 2) return { samples: null, rate: 0 };
-
-    // ── Subject tracking — STRIPPED to the bare minimum (debugging) ──
-    // No gates, no confidence/scale rejection, no velocity prediction, no re-acquire.
-    //  • First frame: the seed the user tapped, else the LARGEST person (a climber's skeleton
-    //    is far bigger than stray wall/hold detections).
-    //  • Every other frame: just the NEAREST detection to the previous one — always taken, so
-    //    the tracker can never get "stuck" holding a stale position.
-    // The crop path is left raw (no smoothing) so we can see exactly what is detected.
-    const samples = [];
-    let prev = null, detected = 0;
-    for (const { t, cands } of raw) {
-      let det = null;
-      const all = cands.map(c => c.lms);   // every detected pose this frame (for the debug overlay)
-      if (!cands.length) { samples.push({ t, det: null, all }); continue; }
-      if (!prev) {
-        det = seed
-          ? cands.slice().sort((a, b) => (Math.hypot(a.cx - seed.cx, a.cy - seed.cy)) - (Math.hypot(b.cx - seed.cx, b.cy - seed.cy)))[0]
-          : cands.slice().sort((a, b) => b.area - a.area)[0];
-      } else {
-        let best = null, bestD = Infinity;
-        for (const c of cands) {
-          const d = Math.hypot(c.cx - prev.cx, c.cy - prev.cy);
-          if (d < bestD) { bestD = d; best = c; }
-        }
-        det = best;
-      }
-      if (det) { prev = det; detected++; }
-      samples.push({ t, det, all });
-    }
-
-    const ok = fillGaps(samples);
-    if (!ok) return { samples: null, rate: 0 };
-    const effFps = (samples.length - 1) / Math.max(0.001, end - start);
-    return { samples, rate: detected / samples.length, fps: effFps };
+    // Return the raw per-frame detections; the subject association runs separately in
+    // trackSubject() so it can be re-run instantly (e.g. when the user adds a seed keyframe)
+    // without re-scanning the whole video.
+    const effFps = (raw.length - 1) / Math.max(0.001, end - start);
+    return { frames: raw, fps: effFps };
   }
+}
+
+/**
+ * Associate the main subject across the scanned frames.
+ * Safety mechanisms: velocity prediction, a strict near-prediction gate while briefly occluded,
+ * a global scale/proximity re-acquire when lost, and a scale sanity gate.
+ * seeds: [{t,cx,cy}] manual picks — at the nearest frame to each seed the subject is FORCED to
+ * the detection nearest that pick, so the user can correct any frame ("worst case, pick it").
+ */
+export function trackSubject(frames, { seeds = [] } = {}) {
+  if (!frames || frames.length < 2) return { samples: null, rate: 0 };
+
+  const seedAt = new Map();               // frame index → seed pick
+  for (const s of seeds) {
+    let bi = -1, bd = Infinity;
+    for (let i = 0; i < frames.length; i++) { const d = Math.abs(frames[i].t - s.t); if (d < bd) { bd = d; bi = i; } }
+    if (bi >= 0 && bd < 0.25) seedAt.set(bi, s);
+  }
+
+  const samples = [];
+  let prev = null, prevT = null, vx = 0, vy = 0, refH = 0, detected = 0;
+  const MAX_V = 1.5, GRACE = 0.35;
+  for (let i = 0; i < frames.length; i++) {
+    const { t, cands } = frames[i];
+    const all = cands.map(c => c.lms);
+    const forced = seedAt.get(i);
+    let det = null;
+    if (!cands.length) { samples.push({ t, det: null, all }); vx *= 0.6; vy *= 0.6; continue; }
+    if (forced) {
+      det = nearestTo(cands, forced);      // manual keyframe: force the pose nearest the pick
+    } else if (!prev) {
+      det = cands.slice().sort((a, b) => b.area - a.area)[0];   // no seed yet → biggest person
+    } else {
+      const dt = t - prevT;
+      const anchor = { cx: prev.cx + vx * dt, cy: prev.cy + vy * dt };
+      det = dt <= GRACE ? pickPose(cands, anchor, 0.16 + 0.5 * dt) : reacquire(cands, anchor, refH, dt);
+      if (det && refH && Math.abs(det.h - refH) / refH > 0.8) det = null;   // scale sanity gate
+    }
+    if (det) {
+      if (prev && t > prevT) {
+        if (forced) { vx = 0; vy = 0; }    // re-anchor cleanly, don't fling from the jump
+        else {
+          const dt = t - prevT;
+          const jump = Math.hypot(det.cx - prev.cx, det.cy - prev.cy);
+          if (jump > 0.3) { vx = 0; vy = 0; }
+          else { vx = clampV((det.cx - prev.cx) / dt, MAX_V); vy = clampV((det.cy - prev.cy) / dt, MAX_V); }
+        }
+      }
+      prev = det; prevT = t; refH = refH ? refH * 0.8 + det.h * 0.2 : det.h; detected++;
+    } else { vx *= 0.6; vy *= 0.6; }
+    samples.push({ t, det, all });
+  }
+
+  const ok = fillGaps(samples);
+  if (!ok) return { samples: null, rate: 0 };
+  return { samples, rate: detected / samples.length };
+}
+
+function nearestTo(cands, pt) {
+  let best = null, bestD = Infinity;
+  for (const c of cands) { const d = Math.hypot(c.cx - pt.cx, c.cy - pt.cy); if (d < bestD) { bestD = d; best = c; } }
+  return best;
 }
 
 function clampV(v, m) { return Math.max(-m, Math.min(m, v)); }

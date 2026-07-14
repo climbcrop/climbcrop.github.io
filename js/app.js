@@ -1,7 +1,6 @@
 // ─────────── ClimbCrop main app ───────────
 import { initI18n, t } from './i18n.js?v=2';
-import { Tracker, buildPath, seekTo, smoothstep, lerpBox, BONES } from './tracker.js?v=2';
-import { analyzeClickTrack } from './clicktrack.js?v=2';
+import { Tracker, buildPath, seekTo, smoothstep, lerpBox, BONES, trackSubject } from './tracker.js?v=2';
 import { exportVideo } from './exporter.js?v=2';
 
 const $ = s => document.querySelector(s);
@@ -37,14 +36,15 @@ const GYMS = [
 const state = {
   fileUrl: null, dur: 0, vw: 0, vh: 0,
   trimStart: 0, trimEnd: 0, climbStart: 0, zoomDur: 2.5,
-  arKey: '54', zoom: 0.55, smooth: 0, skel: 'always',
+  arKey: '54', zoom: 0.55, smooth: 0.6, skel: 'off',
   segments: [],           // {start, end, speed}
   manualAnchors: [],      // {t, dx, dy} manual framing corrections (normalized offsets)
-  samples: null, path: null, seed: null,
+  seeds: [],              // {t, cx, cy} manual subject picks (keyframes)
+  frames: null,           // cached per-frame detections from the scan (re-tracked on seed change)
+  samples: null, path: null,
   view: 'full', playing: false, analyzed: false,
   result: null,
   quality: 'accurate',    // pose model tier: fast | balanced | accurate
-  trackMethod: 'pose',    // 'pose' (MediaPipe) | 'clicktrack' (appearance tracking)
   watermark: { difficulty: null, gym: null }, // logo always on; gym: {type:'image',img,name}
 };
 
@@ -96,13 +96,20 @@ function rebuildPath() {
   });
 }
 
+function seedNear(tSec) {
+  let best = null, bd = 0.25;
+  for (const s of state.seeds) { const d = Math.abs(s.t - tSec); if (d < bd) { bd = d; best = s; } }
+  return best;
+}
+
 function cropAt(tSec) {
   const full = state.path ? state.path.full : fullViewBox();
   if (!state.path) {
     // pre-analysis preview of the crop size, centered on the seed or frame center
     const h = full.h * state.zoom, w = h * arVal();
-    const cx = state.seed ? state.seed.cx * state.vw : state.vw / 2;
-    const cy = state.seed ? state.seed.cy * state.vh : state.vh / 2;
+    const s = seedNear(tSec);
+    const cx = s ? s.cx * state.vw : state.vw / 2;
+    const cy = s ? s.cy * state.vh : state.vh / 2;
     return { x: clamp(cx - w / 2, 0, state.vw - w), y: clamp(cy - h / 2, 0, state.vh - h), w, h };
   }
   if (tSec <= state.climbStart) return full;              // full view before the problem starts
@@ -230,14 +237,15 @@ function renderFrame(c, cw, ch, tSec, forExport = false) {
       drawAllSkeletons(c, tSec, nx => nx * cw, ny => ny * ch, sx * (state.vw / 1000));
       drawSkeleton(c, tSec, nx => nx * cw, ny => ny * ch, sx * (state.vw / 1000));
     }
-    if (state.seed) {
+    const seed = seedNear(tSec);
+    if (seed) {
       c.save();
       c.strokeStyle = '#fbbf24'; c.lineWidth = 2;
       c.beginPath();
-      c.arc(state.seed.cx * cw, state.seed.cy * ch, 12, 0, Math.PI * 2);
+      c.arc(seed.cx * cw, seed.cy * ch, 12, 0, Math.PI * 2);
       c.stroke();
       c.beginPath();
-      c.arc(state.seed.cx * cw, state.seed.cy * ch, 3, 0, Math.PI * 2);
+      c.arc(seed.cx * cw, seed.cy * ch, 3, 0, Math.PI * 2);
       c.fillStyle = '#fbbf24'; c.fill();
       c.restore();
     }
@@ -560,69 +568,38 @@ function toast(msg, ms = 3500) {
   setTimeout(() => el.remove(), ms);
 }
 
-// Build the initial click-track box: snap the user's tap to a MediaPipe-detected person at the
-// start frame (padded), else a sensible default box around the tap.
-function seedBox(boxes, seed) {
-  const c = seed || { cx: 0.5, cy: 0.5 };
-  let box = boxes.find(b => c.cx >= b.x && c.cx <= b.x + b.w && c.cy >= b.y && c.cy <= b.y + b.h);
-  if (!box && boxes.length) {
-    box = boxes.reduce((best, b) =>
-      Math.hypot(b.cx - c.cx, b.cy - c.cy) < Math.hypot(best.cx - c.cx, best.cy - c.cy) ? b : best);
-    if (Math.hypot(box.cx - c.cx, box.cy - c.cy) > 0.2) box = null; // too far from the tap
-  }
-  if (box) {
-    const px = box.w * 0.15, py = box.h * 0.1;
-    box = { x: box.x - px, y: box.y - py, w: box.w + 2 * px, h: box.h + 2 * py };
-  } else {
-    box = { x: c.cx - 0.09, y: c.cy - 0.16, w: 0.18, h: 0.32 };
-  }
-  box.w = clamp(box.w, 0.04, 1); box.h = clamp(box.h, 0.04, 1);
-  box.x = clamp(box.x, 0, 1 - box.w); box.y = clamp(box.y, 0, 1 - box.h);
-  return box;
+// Re-run subject association over the cached scan (instant — no re-scan). Called after analyze
+// and whenever the user adds/moves/removes a seed keyframe.
+function retrack() {
+  if (!state.frames) return;
+  const { samples } = trackSubject(state.frames, { seeds: state.seeds });
+  if (!samples) return;
+  state.samples = samples;
+  rebuildPath();
+  drawPreview();
 }
 
 // ─────────── Analyze ───────────
 $('#analyzeBtn').addEventListener('click', async () => {
-  if (state.trackMethod === 'clicktrack' && !state.seed) {
-    toast(t('clickFirst'));
-    setView('full');
-    return;
-  }
   pause();
   abortCtl = new AbortController();
   showModal('loadingModel');
   setIndeterminate(true);   // model download has no progress; don't look frozen
   try {
-    let samples, rate, fps;
-    if (state.trackMethod === 'clicktrack') {
-      // MediaPipe assist: at the start frame, snap the tap to a detected person's box.
-      await tracker.init(state.quality);
-      await seekTo(video, state.trimStart);
-      const box0 = seedBox(tracker.detectBoxes(video), state.seed);
-      setIndeterminate(false);
-      $('#modalTitle').textContent = t('analyzing');
-      modalT0 = performance.now();
-      ({ samples, rate, fps } = await analyzeClickTrack(video, {
-        start: state.trimStart, end: state.trimEnd, box0,
-        onProgress: setProgress, signal: abortCtl.signal,
-      }));
-    } else {
-      await tracker.init(state.quality);
-      setIndeterminate(false);
-      $('#modalTitle').textContent = t('analyzing');
-      modalT0 = performance.now();
-      ({ samples, rate, fps } = await tracker.analyze(video, {
-        start: state.trimStart, end: state.trimEnd, seed: state.seed,
-        scanRate: 1, onProgress: setProgress, signal: abortCtl.signal,
-      }));
-    }
+    await tracker.init(state.quality);
+    setIndeterminate(false);
+    $('#modalTitle').textContent = t('analyzing');
+    modalT0 = performance.now();
+    const { frames, fps } = await tracker.analyze(video, {
+      start: state.trimStart, end: state.trimEnd,
+      scanRate: 1, onProgress: setProgress, signal: abortCtl.signal,
+    });
     hideModal();
-    if (!samples) {
-      toast(t('analyzeLow', { p: 0 }));
-      return;
-    }
-    state.samples = samples;
+    if (!frames || frames.length < 2) { toast(t('analyzeLow', { p: 0 })); return; }
+    state.frames = frames;
     state.sampleFps = fps;
+    const { samples, rate } = trackSubject(frames, { seeds: state.seeds });
+    state.samples = samples;
     state.analyzed = true;
     state.manualAnchors = [];   // fresh path → drop old manual corrections
     rebuildPath();
@@ -729,6 +706,11 @@ $('#resetFramingBtn').addEventListener('click', () => {
   updateManualUI();
   drawPreview();
 });
+$('#resetSeedsBtn').addEventListener('click', () => {
+  state.seeds = [];
+  updateSeedUI();
+  if (state.frames) retrack(); else drawPreview();
+});
 $('#playBtn').addEventListener('click', () => state.playing ? pause() : play());
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' && !$('#screen-editor').classList.contains('hidden')
@@ -751,14 +733,6 @@ $('#qualitySeg').addEventListener('click', e => {
   if (b.dataset.q === state.quality) return;
   state.quality = b.dataset.q;
   $('#qualitySeg').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
-  if (state.analyzed) toast(t('reanalyze'));
-});
-$('#methodSeg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.m === state.trackMethod) return;
-  state.trackMethod = b.dataset.m;
-  $('#methodSeg').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
-  if (state.trackMethod === 'clicktrack' && !state.seed) { setView('full'); toast(t('clickFirst')); }
   if (state.analyzed) toast(t('reanalyze'));
 });
 $('#skelSeg').addEventListener('click', e => {
@@ -838,19 +812,35 @@ $('#setClimbBtn').addEventListener('click', () => {
   drawPreview();
 });
 
-// Pick the main climber — always on the FIRST frame so the lock matches where analysis starts.
+// Pick the climber at ANY frame (a seed keyframe). Click empty space near an existing seed to
+// remove it. After a scan, seeds re-track instantly (no re-scan); before, they just set the
+// preview centre and take effect on the first analyze.
 cv.addEventListener('click', e => {
   if (state.view === 'crop' && state.analyzed) return; // crop view is for drag-reframe, not seeding
-  if (Math.abs(video.currentTime - state.trimStart) > 0.15) {
-    scrubTo(state.trimStart);            // jump to the first frame, then tap the climber
-    toast(t('pickOnFirst'));
-    return;
-  }
   const r = cv.getBoundingClientRect();
-  state.seed = { cx: (e.clientX - r.left) / r.width, cy: (e.clientY - r.top) / r.height };
-  if (state.analyzed) toast(t('reanalyze'));
-  drawPreview();
+  const cx = (e.clientX - r.left) / r.width, cy = (e.clientY - r.top) / r.height;
+  const tSec = video.currentTime;
+  const existing = state.seeds.find(s => Math.abs(s.t - tSec) < 0.2);
+  if (existing) { existing.cx = cx; existing.cy = cy; }
+  else { state.seeds.push({ t: tSec, cx, cy }); state.seeds.sort((a, b) => a.t - b.t); }
+  updateSeedUI();
+  if (state.frames) retrack(); else drawPreview();
 });
+
+function updateSeedUI() {
+  const btn = $('#resetSeedsBtn');
+  if (btn) btn.style.display = state.seeds.length ? '' : 'none';
+  const layer = $('#seedLayer');
+  if (layer) {
+    layer.innerHTML = '';
+    for (const s of state.seeds) {
+      const d = document.createElement('div');
+      d.className = 'tl-seed';
+      d.style.left = `${(s.t / state.dur) * 100}%`;
+      layer.appendChild(d);
+    }
+  }
+}
 
 // Drag on the crop preview to manually reframe this moment (fixes segments the tracker misses).
 let panAnchor = null, panLast = null, panCreated = false;
@@ -931,7 +921,7 @@ function initEditor() {
     dur: video.duration, vw: video.videoWidth, vh: video.videoHeight,
     trimStart: 0, trimEnd: video.duration,
     climbStart: Math.min(1.5, video.duration * 0.15),
-    segments: [], manualAnchors: [], samples: null, path: null, seed: null,
+    segments: [], manualAnchors: [], seeds: [], frames: null, samples: null, path: null,
     analyzed: false, result: null, view: 'full', playing: false,
   });
   $('#exportBtn').disabled = true;
@@ -940,6 +930,8 @@ function initEditor() {
   setView('full');
   renderSegments();
   updateTimelineUI();
+  updateSeedUI();
+  updateManualUI();
   seekTo(video, 0.05).then(() => drawPreview());
   buildThumbnails();
 }
