@@ -30,13 +30,16 @@ export async function exportVideo({
   ctx.imageSmoothingQuality = 'high';
   onCanvas?.(canvas);           // show it live on-screen (mobile: keeps the canvas painting)
 
-  const stream = canvas.captureStream();
+  // Fixed 30 fps capture (CFR). Without an fps the stream is variable-rate, which many players
+  // (mobile / Instagram) render with visible judder; a constant rate exports smoothly.
+  const FPS = 30;
+  const stream = canvas.captureStream(FPS);
   if (audioStream) for (const tr of audioStream.getAudioTracks()) stream.addTrack(tr);
 
   const mime = pickMime();
   const recorder = new MediaRecorder(stream, {
     ...(mime ? { mimeType: mime } : {}),
-    videoBitsPerSecond: 14_000_000,
+    videoBitsPerSecond: 9_000_000,   // 1080p-friendly; lower encoder load → fewer dropped frames
     audioBitsPerSecond: 192_000,
   });
   const chunks = [];
