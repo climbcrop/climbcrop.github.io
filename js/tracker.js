@@ -224,7 +224,8 @@ export class Tracker {
     let prev = null, detected = 0;
     for (const { t, cands } of raw) {
       let det = null;
-      if (!cands.length) { samples.push({ t, det: null }); continue; }
+      const all = cands.map(c => c.lms);   // every detected pose this frame (for the debug overlay)
+      if (!cands.length) { samples.push({ t, det: null, all }); continue; }
       if (!prev) {
         det = seed
           ? cands.slice().sort((a, b) => (Math.hypot(a.cx - seed.cx, a.cy - seed.cy)) - (Math.hypot(b.cx - seed.cx, b.cy - seed.cy)))[0]
@@ -238,7 +239,7 @@ export class Tracker {
         det = best;
       }
       if (det) { prev = det; detected++; }
-      samples.push({ t, det });
+      samples.push({ t, det, all });
     }
 
     const ok = fillGaps(samples);
@@ -347,5 +348,11 @@ export function buildPath(samples, { vw, vh, ar, zoom, smooth, fps }) {
     return A.map((p, j) => [p[0] + (B[j][0] - p[0]) * f, p[1] + (B[j][1] - p[1]) * f, Math.min(p[2], B[j][2])]);
   }
 
-  return { full, trackedBox, lmsAt, cropW, cropH };
+  // Debug: every detected pose at the nearest analysed frame (raw normalized landmarks).
+  function allAt(t) {
+    const [a, b, f] = indexAt(t);
+    return (f < 0.5 ? samples[a] : samples[b]).all || [];
+  }
+
+  return { full, trackedBox, lmsAt, allAt, cropW, cropH };
 }

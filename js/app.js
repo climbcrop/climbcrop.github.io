@@ -176,16 +176,38 @@ function drawSkeleton(c, tSec, mapX, mapY, scale) {
   c.restore();
 }
 
+// Debug overlay: draw EVERY detected pose (gray) so you can see whether MediaPipe found the
+// climber and which pose the tracker locked onto (the bright green one drawn on top).
+function drawAllSkeletons(c, tSec, mapX, mapY, scale) {
+  if (state.skel === 'off' || !state.path || !state.path.allAt) return;
+  const all = state.path.allAt(tSec);
+  if (all.length <= 1) return;
+  c.save();
+  c.globalAlpha = 0.4;
+  c.lineWidth = Math.max(1, 1.5 * scale);
+  c.strokeStyle = '#f8fafc';
+  for (const lms of all) {
+    c.beginPath();
+    for (const [a, b] of BONES) {
+      if (lms[a][2] < 0.3 || lms[b][2] < 0.3) continue;
+      c.moveTo(mapX(lms[a][0]), mapY(lms[a][1]));
+      c.lineTo(mapX(lms[b][0]), mapY(lms[b][1]));
+    }
+    c.stroke();
+  }
+  c.restore();
+}
+
 function renderFrame(c, cw, ch, tSec, forExport = false) {
   const cropMode = forExport || (state.view === 'crop' && state.analyzed);
   if (cropMode) {
     const box = cropAt(tSec);
     c.drawImage(video, box.x, box.y, box.w, box.h, 0, 0, cw, ch);
     const sX = cw / box.w;
-    drawSkeleton(c, tSec,
-      nx => (nx * state.vw - box.x) * sX,
-      ny => (ny * state.vh - box.y) * (ch / box.h),
-      sX * (state.vw / 1000));
+    const mx = nx => (nx * state.vw - box.x) * sX;
+    const my = ny => (ny * state.vh - box.y) * (ch / box.h);
+    drawAllSkeletons(c, tSec, mx, my, sX * (state.vw / 1000));
+    drawSkeleton(c, tSec, mx, my, sX * (state.vw / 1000));
     drawWatermark(c, cw, ch);
   } else {
     c.drawImage(video, 0, 0, cw, ch);
@@ -201,7 +223,10 @@ function renderFrame(c, cw, ch, tSec, forExport = false) {
     c.lineWidth = 2;
     c.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy);
     c.restore();
-    if (state.path) drawSkeleton(c, tSec, nx => nx * cw, ny => ny * ch, sx * (state.vw / 1000));
+    if (state.path) {
+      drawAllSkeletons(c, tSec, nx => nx * cw, ny => ny * ch, sx * (state.vw / 1000));
+      drawSkeleton(c, tSec, nx => nx * cw, ny => ny * ch, sx * (state.vw / 1000));
+    }
     if (state.seed) {
       c.save();
       c.strokeStyle = '#fbbf24'; c.lineWidth = 2;
