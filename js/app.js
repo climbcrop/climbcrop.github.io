@@ -362,12 +362,9 @@ function updatePlayhead() { $('#playhead').style.left = pct(video.currentTime); 
 function updateTimelineUI() {
   $('#hStart').style.left = pct(state.trimStart);
   $('#hEnd').style.left = pct(state.trimEnd);
-  $('#hClimb').style.left = pct(state.climbStart);
   $('#shadeL').style.width = pct(state.trimStart);
   $('#shadeR').style.width = `${(1 - state.trimEnd / state.dur) * 100}%`;
   $('#trimLabelVal').textContent = `${fmt(state.trimStart)} – ${fmt(state.trimEnd)}`;
-  $('#climbLabelVal').textContent = fmt(state.climbStart);
-  $('#climbStartVal').textContent = fmt(state.climbStart);
   const layer = $('#bandLayer');
   layer.innerHTML = '';
   for (const g of state.segments) {
@@ -384,9 +381,9 @@ function updateTimelineUI() {
   updatePlayhead();
 }
 
-// Keep the climb marker and every speed section inside the trimmed range.
-function clampInnerKeyframes() {
-  state.climbStart = clamp(state.climbStart, state.trimStart, state.trimEnd);
+// The intro zoom starts a fixed 1s after the (trimmed) start; keep speed sections in range.
+function syncClimbStart() {
+  state.climbStart = clamp(state.trimStart + 1, state.trimStart, state.trimEnd);
   for (const g of state.segments) {
     g.start = clamp(g.start, state.trimStart, state.trimEnd);
     g.end = clamp(g.end, state.trimStart, state.trimEnd);
@@ -432,15 +429,12 @@ function onTimelineMove(e) {
   const tSec = clamp((e.clientX - r.left) / r.width, 0, 1) * state.dur;
   if (dragRole === 'start') {
     state.trimStart = clamp(tSec, 0, state.trimEnd - 0.5);
-    clampInnerKeyframes();
+    syncClimbStart();
     scrubTo(state.trimStart);            // show the new start frame live
   } else if (dragRole === 'end') {
     state.trimEnd = clamp(tSec, state.trimStart + 0.5, state.dur);
-    clampInnerKeyframes();
+    syncClimbStart();
     scrubTo(state.trimEnd);              // show the new end frame live
-  } else if (dragRole === 'climb') {
-    state.climbStart = clamp(tSec, state.trimStart, state.trimEnd);
-    scrubTo(state.climbStart);
   } else {
     scrubTo(clamp(tSec, state.trimStart, state.trimEnd));
   }
@@ -673,6 +667,8 @@ function setView(v) {
   $('#viewFullBtn').classList.toggle('active', v === 'full');
   $('#viewCropBtn').classList.toggle('active', v === 'crop');
   cv.classList.toggle('pannable', state.analyzed);   // drag the box in either view
+  const sh = $('#seedHint');
+  if (sh) sh.style.display = state.analyzed ? '' : 'none';   // box-drag hint only after analysis
   fitPreviewCanvas();
   drawPreview();
 }
@@ -778,11 +774,6 @@ function syncSliderLabels() {
 zoomSlider.addEventListener('input', () => { state.zoom = zoomSlider.value / 100; syncSliderLabels(); rebuildPath(); drawPreview(); });
 smoothSlider.addEventListener('input', () => { state.smooth = smoothSlider.value / 100; syncSliderLabels(); rebuildPath(); drawPreview(); });
 zoomDurSlider.addEventListener('input', () => { state.zoomDur = zoomDurSlider.value / 10; syncSliderLabels(); drawPreview(); });
-$('#setClimbBtn').addEventListener('click', () => {
-  state.climbStart = clamp(video.currentTime, state.trimStart, state.trimEnd);
-  updateTimelineUI();
-  drawPreview();
-});
 
 // Move the crop BOX to place a keyframe at the current frame.
 //  • Original view: tap / drag → the box centre goes where you point (direct placement).
@@ -834,16 +825,37 @@ function updateManualUI() {
   const btn = $('#resetFramingBtn');
   if (btn) btn.style.display = state.boxKeys.length ? '' : 'none';
   const layer = $('#seedLayer');
-  if (layer) {
-    layer.innerHTML = '';
-    for (const k of state.boxKeys) {
-      const d = document.createElement('div');
-      d.className = 'tl-seed';
-      d.style.left = `${(k.t / state.dur) * 100}%`;
-      layer.appendChild(d);
-    }
+  if (!layer) return;
+  layer.innerHTML = '';
+  for (const k of state.boxKeys) {
+    const tick = document.createElement('div');
+    tick.className = 'tl-seed';
+    tick.style.left = `${(k.t / state.dur) * 100}%`;
+    const del = document.createElement('button');
+    del.className = 'tl-seed-del';
+    del.textContent = '✕';
+    del.title = t('deleteKey');
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.boxKeys = state.boxKeys.filter(x => x !== k);
+      updateManualUI();
+      drawPreview();
+    });
+    tick.appendChild(del);
+    tick.addEventListener('pointerdown', e => e.stopPropagation()); // don't scrub the timeline
+    tick.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasSel = tick.classList.contains('sel');
+      layer.querySelectorAll('.tl-seed.sel').forEach(x => x.classList.remove('sel'));
+      if (!wasSel) { tick.classList.add('sel'); scrubTo(k.t); }
+    });
+    layer.appendChild(tick);
   }
 }
+// Click anywhere else hides the delete buttons.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.tl-seed')) $('#seedLayer')?.querySelectorAll('.tl-seed.sel').forEach(x => x.classList.remove('sel'));
+});
 
 // ─────────── Upload / init ───────────
 async function loadVideo(file) {
@@ -879,7 +891,7 @@ function initEditor() {
   Object.assign(state, {
     dur: video.duration, vw: video.videoWidth, vh: video.videoHeight,
     trimStart: 0, trimEnd: video.duration,
-    climbStart: Math.min(1.5, video.duration * 0.15),
+    climbStart: Math.min(1, video.duration),   // intro zoom starts 1s after the start
     segments: [], boxKeys: [], frames: null, samples: null, path: null,
     analyzed: false, result: null, view: 'full', playing: false,
   });

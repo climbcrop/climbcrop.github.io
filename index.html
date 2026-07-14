@@ -95,12 +95,11 @@
           <div class="tl-shade right" id="shadeR"></div>
           <div class="tl-handle" id="hStart" data-role="start"><i></i></div>
           <div class="tl-handle" id="hEnd" data-role="end"><i></i></div>
-          <div class="tl-marker" id="hClimb" data-role="climb" title="Climb start">🚩</div>
           <div class="tl-playhead" id="playhead"></div>
         </div>
         <div class="tl-legend">
           <span>✂️ <span data-i18n="trimLabel">시작/끝 트림</span>: <b id="trimLabelVal"></b></span>
-          <span>🚩 <span data-i18n="climbStartShort">등반 시작</span>: <b id="climbLabelVal"></b></span>
+          <span data-i18n="keyHint">🟡 키프레임을 누르면 삭제 버튼이 떠요</span>
         </div>
       </div>
 
@@ -144,12 +143,8 @@
           <button id="resetFramingBtn" class="mini-btn" style="display:none" data-i18n="resetFraming">보정 초기화</button>
         </div>
 
-        <div class="field boxed">
-          <label data-i18n="introZoom">인트로 줌 (전체 뷰 → 확대)</label>
-          <div class="row">
-            <button id="setClimbBtn" class="mini-btn">🚩 <span data-i18n="setHere">현재 위치로 설정</span></button>
-            <b id="climbStartVal" class="mono"></b>
-          </div>
+        <div class="field">
+          <label data-i18n="introZoom">인트로 줌 (시작 1초 뒤 확대)</label>
           <label class="sub-label"><span data-i18n="zoomDur">확대 시간</span> <output id="zoomDurVal"></output></label>
           <input type="range" id="zoomDurSlider" min="5" max="60" value="25">
         </div>
