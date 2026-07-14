@@ -114,10 +114,60 @@ export async function exportVideo({
   const type = (mime || 'video/webm').split(';')[0];
   const ext = type === 'video/mp4' ? 'mp4' : 'webm';
   let blob = new Blob(chunks, { type });
-  // MediaRecorder WebM omits the Duration header → mobile players/messengers read it as a
-  // few-second clip. Patch the real duration in so it saves/shares at full length.
-  if (ext === 'webm') blob = await fixWebmDurationSafe(blob, performance.now() - recStart);
+  // MediaRecorder writes a wrong/zero container duration → mobile players & galleries show a
+  // few-second clip even though every frame is there. Patch the real duration in.
+  const durMs = performance.now() - recStart;
+  if (ext === 'webm') blob = await fixWebmDurationSafe(blob, durMs);
+  else if (ext === 'mp4') blob = await fixMp4DurationSafe(blob, durMs);
   return { blob, ext };
+}
+
+// Patch the duration fields (mvhd/tkhd/mdhd/mehd) of a MediaRecorder fragmented-MP4 in place.
+// Byte lengths are unchanged (no box-size recomputation), so this can't corrupt the file; any
+// failure falls back to the original blob.
+async function fixMp4DurationSafe(blob, durationMs) {
+  if (!(durationMs > 0)) return blob;
+  try {
+    const buf = await blob.arrayBuffer();
+    const dv = new DataView(buf);
+    const durSec = durationMs / 1000;
+    let movieTimescale = 0;
+    const setDur = (off, version, ts) => {
+      const d = Math.round(durSec * ts);
+      if (version === 1) { dv.setUint32(off, Math.floor(d / 4294967296)); dv.setUint32(off + 4, d >>> 0); }
+      else dv.setUint32(off, d >>> 0);
+    };
+    const walk = (start, end) => {
+      let o = start;
+      while (o + 8 <= end) {
+        let size = dv.getUint32(o), header = 8;
+        const ty = String.fromCharCode(dv.getUint8(o + 4), dv.getUint8(o + 5), dv.getUint8(o + 6), dv.getUint8(o + 7));
+        if (size === 1) { size = dv.getUint32(o + 8) * 4294967296 + dv.getUint32(o + 12); header = 16; }
+        else if (size === 0) size = end - o;
+        if (size < 8 || o + size > end) break;
+        const b = o + header;
+        if (ty === 'moov' || ty === 'trak' || ty === 'mdia' || ty === 'mvex') {
+          walk(b, o + size);
+        } else if (ty === 'mvhd') {
+          const v = dv.getUint8(b), tsOff = v === 1 ? b + 20 : b + 12;
+          movieTimescale = dv.getUint32(tsOff);
+          setDur(tsOff + 4, v, movieTimescale);
+        } else if (ty === 'mdhd') {
+          const v = dv.getUint8(b), tsOff = v === 1 ? b + 20 : b + 12;
+          setDur(tsOff + 4, v, dv.getUint32(tsOff));
+        } else if (ty === 'tkhd') {
+          const v = dv.getUint8(b), durOff = v === 1 ? b + 28 : b + 20;
+          if (movieTimescale) setDur(durOff, v, movieTimescale);
+        } else if (ty === 'mehd') {
+          const v = dv.getUint8(b);
+          if (movieTimescale) setDur(b + 4, v, movieTimescale);
+        }
+        o += size;
+      }
+    };
+    walk(0, dv.byteLength);
+    return new Blob([buf], { type: 'video/mp4' });
+  } catch { return blob; }
 }
 
 // Inject the true Duration into a MediaRecorder WebM. Uses a small vendored fixer loaded
