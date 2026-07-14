@@ -595,9 +595,10 @@ $('#exportBtn').addEventListener('click', async () => {
   abortCtl = new AbortController();
   showModal('exporting');
   monitorGain.gain.value = 0; // silent export; audio still reaches the recorder
-  // Mobile keeps an off-DOM <video> from playing reliably — mount it (tiny) for the export.
+  // Mobile throttles/stops a non-visible <video>, truncating the capture. Show the source video
+  // playing in the modal so it stays fully alive for the whole export.
   video.classList.add('export-live');
-  document.body.appendChild(video);
+  $('#modalTitle').insertAdjacentElement('afterend', video);
   try {
     const [outW, outH] = ASPECTS[state.arKey].out;
     const res = await exportVideo({
@@ -608,7 +609,6 @@ $('#exportBtn').addEventListener('click', async () => {
       speedAt, outW, outH,
       onProgress: setProgress,
       signal: abortCtl.signal,
-      onCanvas: mountExportPreview,
     });
     state.result = res;
     showResult(res);
@@ -619,21 +619,9 @@ $('#exportBtn').addEventListener('click', async () => {
     monitorGain.gain.value = 1;
     video.classList.remove('export-live');
     if (video.parentNode) video.parentNode.removeChild(video);
-    clearExportPreview();
     hideModal();
   }
 });
-
-// Show the export canvas live inside the modal (also keeps a painted canvas on-screen,
-// which mobile browsers need for captureStream to keep producing frames).
-function mountExportPreview(canvas) {
-  clearExportPreview();
-  canvas.className = 'export-live-canvas';
-  $('#modalTitle').insertAdjacentElement('afterend', canvas);
-}
-function clearExportPreview() {
-  document.querySelector('.export-live-canvas')?.remove();
-}
 
 // ─────────── Result / share ───────────
 function showResult({ blob, ext }) {
