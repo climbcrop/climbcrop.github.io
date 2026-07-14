@@ -127,16 +127,22 @@ function cropAt(tSec) {
     const cy = (m ? m.cy : 0.5) * state.vh;
     return { x: clamp(cx - w / 2, 0, state.vw - w), y: clamp(cy - h / 2, 0, state.vh - h), w, h };
   }
-  if (tSec <= state.climbStart) return full;              // full view before the problem starts
-  let [cx, cy] = state.path.centerNormAt(tSec);           // auto-tracked centre
-  const m = manualCenter(tSec);
-  if (m) { cx += (m.cx - cx) * m.w; cy += (m.cy - cy) * m.w; }   // blend toward the manual box
-  const tracked = state.path.boxAtCenter(cx, cy);
-  if (tSec < state.climbStart + state.zoomDur) {           // gentle ease-in zoom
-    const f = smoothstep((tSec - state.climbStart) / state.zoomDur);
-    return lerpBox(full, tracked, f);
+  // Auto framing (full view before the climb, then an ease-in zoom to the tracked box).
+  let autoBox;
+  if (tSec <= state.climbStart) {
+    autoBox = full;
+  } else {
+    const [cx, cy] = state.path.centerNormAt(tSec);
+    const tracked = state.path.boxAtCenter(cx, cy);
+    if (tSec < state.climbStart + state.zoomDur) {
+      const f = smoothstep((tSec - state.climbStart) / state.zoomDur);
+      autoBox = lerpBox(full, tracked, f);
+    } else autoBox = tracked;
   }
-  return tracked;
+  // A manual box keyframe overrides the auto framing (even during the intro), blended by weight.
+  const m = manualCenter(tSec);
+  if (!m) return autoBox;
+  return lerpBox(autoBox, state.path.boxAtCenter(m.cx, m.cy), m.w);
 }
 
 function speedAt(tSec) {
