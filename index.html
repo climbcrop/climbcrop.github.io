@@ -107,6 +107,15 @@
         <h2 data-i18n="settings">설정</h2>
 
         <div class="field">
+          <label data-i18n="trackMethod">추적 방식</label>
+          <div class="segmented" id="methodSeg">
+            <button data-m="pose" class="active" data-i18n="mPose">포즈(자동)</button>
+            <button data-m="clicktrack" data-i18n="mClick">클릭 추적</button>
+          </div>
+          <p class="hint" data-i18n="methodHint">클릭 추적: 첫 프레임에서 클라이머를 클릭하면 그 사람 외형을 따라갑니다(작거나 옆모습일 때 유리).</p>
+        </div>
+
+        <div class="field">
           <label data-i18n="quality">추적 정확도</label>
           <div class="segmented" id="qualitySeg">
             <button data-q="fast" data-i18n="qFast">빠름</button>

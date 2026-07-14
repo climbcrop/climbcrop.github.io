@@ -150,6 +150,25 @@ export class Tracker {
     this.modelKey = modelKey;
   }
 
+  /** Detect people in the CURRENT video frame and return their normalized bounding boxes.
+   *  Used to seed click-to-track: the user's tap snaps to the detected climber at the start. */
+  detectBoxes(video) {
+    if (!this.landmarker) return [];
+    let res; try { res = this.landmarker.detect(video); } catch { return []; }
+    const out = [];
+    for (const lms of (res.landmarks || [])) {
+      let minX = 1, minY = 1, maxX = 0, maxY = 0, n = 0;
+      for (const p of lms) {
+        if ((p.visibility ?? 1) < 0.3) continue;
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); n++;
+      }
+      if (n < 3) continue;
+      out.push({ x: minX, y: minY, w: maxX - minX, h: maxY - minY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 });
+    }
+    return out;
+  }
+
   /**
    * Sample the trimmed range in a SINGLE linear playback pass (no per-frame seeking —
    * random seeks are the slow part). Plays muted at scanRate× and runs pose detection on
@@ -345,6 +364,7 @@ export function buildPath(samples, { vw, vh, ar, zoom, smooth, fps }) {
   function lmsAt(t) {
     const [a, b, f] = indexAt(t);
     const A = samples[a].det.lms, B = samples[b].det.lms;
+    if (!A || !B) return null;          // click-track has no landmarks
     return A.map((p, j) => [p[0] + (B[j][0] - p[0]) * f, p[1] + (B[j][1] - p[1]) * f, Math.min(p[2], B[j][2])]);
   }
 

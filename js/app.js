@@ -1,6 +1,7 @@
 // ─────────── ClimbCrop main app ───────────
 import { initI18n, t } from './i18n.js?v=2';
 import { Tracker, buildPath, seekTo, smoothstep, lerpBox, BONES } from './tracker.js?v=2';
+import { analyzeClickTrack } from './clicktrack.js?v=2';
 import { exportVideo } from './exporter.js?v=2';
 
 const $ = s => document.querySelector(s);
@@ -43,6 +44,7 @@ const state = {
   view: 'full', playing: false, analyzed: false,
   result: null,
   quality: 'accurate',    // pose model tier: fast | balanced | accurate
+  trackMethod: 'pose',    // 'pose' (MediaPipe) | 'clicktrack' (appearance tracking)
   watermark: { difficulty: null, gym: null }, // logo always on; gym: {type:'image',img,name}
 };
 
@@ -154,6 +156,7 @@ function drawSkeleton(c, tSec, mapX, mapY, scale) {
   const alpha = skeletonAlpha(tSec);
   if (!alpha) return;
   const lms = state.path.lmsAt(tSec);
+  if (!lms) return;                 // click-track has no landmarks
   c.save();
   c.globalAlpha = alpha;
   c.lineWidth = Math.max(2, 3 * scale);
@@ -557,21 +560,62 @@ function toast(msg, ms = 3500) {
   setTimeout(() => el.remove(), ms);
 }
 
+// Build the initial click-track box: snap the user's tap to a MediaPipe-detected person at the
+// start frame (padded), else a sensible default box around the tap.
+function seedBox(boxes, seed) {
+  const c = seed || { cx: 0.5, cy: 0.5 };
+  let box = boxes.find(b => c.cx >= b.x && c.cx <= b.x + b.w && c.cy >= b.y && c.cy <= b.y + b.h);
+  if (!box && boxes.length) {
+    box = boxes.reduce((best, b) =>
+      Math.hypot(b.cx - c.cx, b.cy - c.cy) < Math.hypot(best.cx - c.cx, best.cy - c.cy) ? b : best);
+    if (Math.hypot(box.cx - c.cx, box.cy - c.cy) > 0.2) box = null; // too far from the tap
+  }
+  if (box) {
+    const px = box.w * 0.15, py = box.h * 0.1;
+    box = { x: box.x - px, y: box.y - py, w: box.w + 2 * px, h: box.h + 2 * py };
+  } else {
+    box = { x: c.cx - 0.09, y: c.cy - 0.16, w: 0.18, h: 0.32 };
+  }
+  box.w = clamp(box.w, 0.04, 1); box.h = clamp(box.h, 0.04, 1);
+  box.x = clamp(box.x, 0, 1 - box.w); box.y = clamp(box.y, 0, 1 - box.h);
+  return box;
+}
+
 // ─────────── Analyze ───────────
 $('#analyzeBtn').addEventListener('click', async () => {
+  if (state.trackMethod === 'clicktrack' && !state.seed) {
+    toast(t('clickFirst'));
+    setView('full');
+    return;
+  }
   pause();
   abortCtl = new AbortController();
   showModal('loadingModel');
   setIndeterminate(true);   // model download has no progress; don't look frozen
   try {
-    await tracker.init(state.quality);
-    setIndeterminate(false);
-    $('#modalTitle').textContent = t('analyzing');
-    modalT0 = performance.now();
-    const { samples, rate, fps } = await tracker.analyze(video, {
-      start: state.trimStart, end: state.trimEnd, seed: state.seed,
-      scanRate: 1, onProgress: setProgress, signal: abortCtl.signal,
-    });
+    let samples, rate, fps;
+    if (state.trackMethod === 'clicktrack') {
+      // MediaPipe assist: at the start frame, snap the tap to a detected person's box.
+      await tracker.init(state.quality);
+      await seekTo(video, state.trimStart);
+      const box0 = seedBox(tracker.detectBoxes(video), state.seed);
+      setIndeterminate(false);
+      $('#modalTitle').textContent = t('analyzing');
+      modalT0 = performance.now();
+      ({ samples, rate, fps } = await analyzeClickTrack(video, {
+        start: state.trimStart, end: state.trimEnd, box0,
+        onProgress: setProgress, signal: abortCtl.signal,
+      }));
+    } else {
+      await tracker.init(state.quality);
+      setIndeterminate(false);
+      $('#modalTitle').textContent = t('analyzing');
+      modalT0 = performance.now();
+      ({ samples, rate, fps } = await tracker.analyze(video, {
+        start: state.trimStart, end: state.trimEnd, seed: state.seed,
+        scanRate: 1, onProgress: setProgress, signal: abortCtl.signal,
+      }));
+    }
     hideModal();
     if (!samples) {
       toast(t('analyzeLow', { p: 0 }));
@@ -707,6 +751,14 @@ $('#qualitySeg').addEventListener('click', e => {
   if (b.dataset.q === state.quality) return;
   state.quality = b.dataset.q;
   $('#qualitySeg').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+  if (state.analyzed) toast(t('reanalyze'));
+});
+$('#methodSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.m === state.trackMethod) return;
+  state.trackMethod = b.dataset.m;
+  $('#methodSeg').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+  if (state.trackMethod === 'clicktrack' && !state.seed) { setView('full'); toast(t('clickFirst')); }
   if (state.analyzed) toast(t('reanalyze'));
 });
 $('#skelSeg').addEventListener('click', e => {
