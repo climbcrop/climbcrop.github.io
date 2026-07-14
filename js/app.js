@@ -646,19 +646,24 @@ function showResult({ blob, ext }) {
   showScreen('result');
 }
 
+// One unified share: hand the video file to the OS share sheet (Instagram, KakaoTalk, Messages,
+// …). If file-sharing isn't available (most desktops), fall back to downloading the file.
 async function shareResult() {
   if (!state.result) return;
   const { blob, ext } = state.result;
   const file = new File([blob], `climbcrop.${ext}`, { type: blob.type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'ClimbCrop' }); } catch { /* user dismissed */ }
+    try {
+      await navigator.share({ files: [file], title: 'ClimbCrop', text: 'ClimbCrop 🧗' });
+    } catch (err) {
+      if (err.name !== 'AbortError') { $('#downloadBtn').click(); toast(t('shareNoFiles'), 4000); }
+    }
   } else {
-    toast(t('shareNoFiles'), 5000);
+    $('#downloadBtn').click();            // no OS share for files → just download it
+    toast(t('shareNoFiles'), 4000);
   }
 }
 $('#shareBtn').addEventListener('click', shareResult);
-$('#shareInsta').addEventListener('click', shareResult);
-$('#shareKakao').addEventListener('click', shareResult);
 $('#backToEditBtn').addEventListener('click', () => { showScreen('editor'); drawPreview(); });
 
 // ─────────── Settings bindings ───────────
@@ -667,8 +672,11 @@ function setView(v) {
   $('#viewFullBtn').classList.toggle('active', v === 'full');
   $('#viewCropBtn').classList.toggle('active', v === 'crop');
   cv.classList.toggle('pannable', state.analyzed);   // drag the box in either view
-  const sh = $('#seedHint');
-  if (sh) sh.style.display = state.analyzed ? '' : 'none';   // box-drag hint only after analysis
+  // Manual-correction UI (box-drag hint, keyframe help) only makes sense once analyzed.
+  const disp = state.analyzed ? '' : 'none';
+  for (const id of ['#seedHint', '#manualField', '#keyHintLegend']) {
+    const el = $(id); if (el) el.style.display = disp;
+  }
   fitPreviewCanvas();
   drawPreview();
 }
